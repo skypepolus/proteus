@@ -68,10 +68,11 @@ $$\text{Total Metadata Footprint} = N_{\text{blocks}} \times 16 \text{ bytes}$$
 
 ## 4. The Worst-Case "Swiss Cheese" Breakdown
 
-A "Swiss Cheese" state (extreme external fragmentation) occurs when memory is punctured by millions of non-contiguous free holes separated by isolated, active allocations. The total volume of free memory is high, but it is split into pieces.o```text
+A "Swiss Cheese" state (extreme external fragmentation) occurs when memory is punctured by millions of non-contiguous free holes separated by isolated, active allocations. The total volume of free memory is high, but it is split into pieces.o
+
 Swiss Cheese Canvas:
 [Allocated][ Free Hole ][Allocated][ Free Hole ][Allocated][ Free Hole ]
-```
+
 Under this scenario, the behavioral divergence between traditional size-class allocators and Proteus is stark:
 
 ### A. Traditional Allocators: The Spatial Bloat Trap
