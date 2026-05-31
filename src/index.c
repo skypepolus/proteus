@@ -141,44 +141,6 @@ void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_
     return user_payload;
 }
 
-void pt_idx_tree_insert(pt_arena_t* arena, word_t* hdr_ptr, word_t size_words) {
-    pt_redblack_t* node = pt_idx_hdr_to_tree(hdr_ptr, size_words);
-    
-    // Initialize the fresh tree node metadata
-    node->left   = NULL;
-    node->right  = NULL;
-    node->parent = NULL;
-    node->color  = PT_RB_RED; // Standard Red-Black insertion property
-    node->left_max  = 0;
-    node->right_max = 0;
-    node->ftr[0]    = size_words; // Anchor size at trailing edge
-
-    pt_redblack_t* y = NULL;
-    pt_redblack_t* x = arena->root;
-
-    // 1. Standard Binary Search Tree routing by absolute memory address
-    while (x != NULL) {
-        y = x;
-        if ((uintptr_t)node < (uintptr_t)x) {
-            x = x->left;
-        } else {
-            x = x->right;
-        }
-    }
-
-    node->parent = y;
-    if (y == NULL) {
-        arena->root = node; // Tree was empty
-    } else if ((uintptr_t)node < (uintptr_t)y) {
-        y->left = node;
-    } else {
-        y->right = node;
-    }
-
-    // 2. Propagate initial size metrics up to the root before rebalancing
-    pt_idx_tree_update_augmentation(node);
-}
-
 // Handles shifting a left tree node rightward within the newly unified block boundaries
 static inline void pt_idx_tree_migrate_rightward(pt_arena_t* arena, pt_redblack_t* old_node, 
                                                  word_t* final_hdr, word_t final_size) {
@@ -372,11 +334,13 @@ void pt_idx_tree_insert(pt_arena_t* arena, word_t* final_hdr, word_t final_size)
     // Derive our 8-word tree node layout sitting at the trailing edge of the free space
     pt_redblack_t* z = pt_idx_hdr_to_tree(final_hdr, final_size);
     
+	z->hdr[0] = 8;
     z->left  = NULL;
     z->right = NULL;
     z->color = PT_RB_RED; // New entries are always marked red
     z->left_max  = 0;
     z->right_max = 0;
+	z->ftr[0] = final_size;
 
     // Address-Ordered Tree Descent
     while (x != NULL) {
@@ -434,7 +398,7 @@ void pt_idx_tree_insert(pt_arena_t* arena, word_t* final_hdr, word_t final_size)
     arena->root->color = PT_RB_BLACK;
     
     // Bubble up and correct all structural size augmentations
-    pt_node_propagate_aug(arena, z);
+    pt_node_propagate_aug(z);
 }
 
 // Internal helper to exchange topological tree relationships without altering block data
@@ -485,7 +449,7 @@ void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z) {
     }
 
     // Force an immediate backward propagation repair from the deletion pivot point
-    pt_node_propagate_aug(arena, fixup_parent);
+    pt_node_propagate_aug(fixup_parent);
 
     // If a black node was unlinked, execute standard balancing fixups to maintain tree properties
     if (y_original_color == PT_RB_BLACK) {

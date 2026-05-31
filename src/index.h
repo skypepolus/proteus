@@ -93,7 +93,7 @@ static inline void pt_node_update_aug(pt_redblack_t* n) {
 }
 
 // Bubbles augmentation corrections from a modified node all the way up to the root anchor
-static inline void pt_node_propagate_aug(pt_arena_t* arena, pt_redblack_t* n) {
+static inline void pt_node_propagate_aug(pt_redblack_t* n) {
     while (n) {
         pt_node_update_aug(n);
         n = n->parent;
@@ -135,5 +135,8 @@ static inline void pt_tree_rotate_right(pt_arena_t* arena, pt_redblack_t* y) {
     pt_node_update_aug(y);
     pt_node_update_aug(x);
 }
+
+void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z);
+void pt_idx_tree_insert(pt_arena_t* arena, word_t* final_hdr, word_t final_size);
 
 #endif // PT_INDEX_H

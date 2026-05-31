@@ -4,6 +4,7 @@
 #include "primitives.h"
 #include <hybrid_lock.h>
 #include <pthread.h>
+#include <sys/mman.h>
 
 #if !defined(__APPLE__)
 #ifndef _GNU_SOURCE
@@ -55,8 +56,6 @@ static inline pt_arena_t* pt_arena_get_local(void) {
 
     return &g_pt_arenas[routing_id % cores];
 }
-
-#define PT_SUPER_PAGE_BYTES (1ULL << 32) // Strict 4GB tracking scale
 
 static inline pt_superpage_t* pt_arena_superpage_new(void) {
     size_t allocation_canvas = 2 * (size_t)PT_SUPER_PAGE_BYTES;

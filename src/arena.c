@@ -8,7 +8,7 @@
 #endif
 
 // Global internal symbols
-long        g_pt_num_cores = 0;
+_Atomic int g_pt_num_cores = 0;
 pt_arena_t* g_pt_arenas = NULL;
 
 static pthread_once_t g_bootstrap_once = PTHREAD_ONCE_INIT;

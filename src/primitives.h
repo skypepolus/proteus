@@ -11,14 +11,14 @@
 
 typedef intptr_t word_t;
 
-#define PT_WORD_SIZE_BYTES       (sizeof(word_t)) // 8 bytes on 64-bit macOS/Linux
+#define PT_WORD_SIZE_BYTES       ((word_t)sizeof(word_t)) // 8 bytes on 64-bit macOS/Linux
 #define PT_WORD_MASK             (PT_WORD_SIZE_BYTES - 1)
 
 // Round up requested bytes to ensure the user payload is a multiple of 2 words (16 bytes)
 #define PT_BYTES_TO_WORDS(bytes) ((((bytes) + 15) & ~15) / PT_WORD_SIZE_BYTES)
 #define PT_WORDS_TO_BYTES(words) ((words) * PT_WORD_SIZE_BYTES)
 
-#define PT_SUPER_PAGE_BYTES      (4ULL * 1024 * 1024 * 1024)
+#define PT_SUPER_PAGE_BYTES      ((word_t)4 * 1024 * 1024 * 1024)
 #define PT_SUPER_PAGE_WORDS      (PT_SUPER_PAGE_BYTES / PT_WORD_SIZE_BYTES)
 
 #define PT_HUGE_THRESHOLD_WORDS  (PT_SUPER_PAGE_WORDS - 4)

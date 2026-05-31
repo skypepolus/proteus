@@ -112,7 +112,7 @@ void* stress_worker(void* arg) {
 }
 
 int main(void) {
-    pthread_threads[NUM_THREADS];
+    pthread_t threads[NUM_THREADS];
     printf("[Proteus Stress Engine]: Initializing Execution Fabric...\n");
     printf("[Proteus Stress Engine]: Spawning %d concurrent workers executing %d operations each...\n", NUM_THREADS, ALLOC_OPERATIONS);
 

@@ -1,33 +1,70 @@
-# ==============================================================================
-# Makefile for the Proteus Elastic Memory Engine (macOS/Clang)
-# ==============================================================================
+# ============================================================================
+# Proteus Quad-Target Shared Object & Static Archive Build System
+# ============================================================================
 
-CC = clang
+CC       = clang
+CFLAGS   = -Wall -Wextra -std=c11 -fPIC -D_GNU_SOURCE
+INCLUDES = -Iinclude -Isrc -Ideps/hybrid-lock/include
 
-# Compilation Flags:
-# -O3: Aggressive compiler loop-unrolling and macro inlining
-# -Iinclude: Exposes proteus's public headers
-# -Ideps/hybrid-lock/include: Directly exposes hybrid_lock.h from the submodule
-CFLAGS = -Wall -Wextra -O3 -std=c11 -Iinclude -Isrc -Ideps/hybrid-lock/include
-LDFLAGS = -pthread
+# Dynamic Shared Object Targets
+TARGET_BENCH_SO = libproteus.so
+TARGET_DEBUG_SO = libproteus_debug.so
 
-SRC = src/core.c src/arena.c src/index.c
-OBJ = $(SRC:.c=.o)
-LIB = libproteus.a
+# Static Archive Targets
+TARGET_BENCH_A  = libproteus.a
+TARGET_DEBUG_A  = libproteus_debug.a
 
-all: $(LIB)
+# Source Enumerations
+SRCS = src/core.c src/arena.c src/index.c
+OBJS_BENCH = $(SRCS:src/%.c=src/%.bench.o)
+OBJS_DEBUG = $(SRCS:src/%.c=src/%.debug.o)
 
-$(LIB): $(OBJ)
-	ar rcs $@ $^
+.PHONY: all bench debug clean init-deps
 
-src/%.o: src/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+# Default action builds all dynamic and static profiles simultaneously
+all: bench debug
 
-# Convenience rule to sync submodules if building on a fresh clone
+# ----------------------------------------------------------------------------
+# Profile 1: Benchmark / Production Engine (-O3, Hidden Internals)
+# ----------------------------------------------------------------------------
+bench: $(TARGET_BENCH_SO) $(TARGET_BENCH_A)
+
+$(TARGET_BENCH_SO): $(OBJS_BENCH)
+	$(CC) -shared -O3 $(OBJS_BENCH) -lpthread -o $(TARGET_BENCH_SO)
+	@echo "[Proteus Build]: Created Benchmark Shared Object -> $(TARGET_BENCH_SO)"
+
+$(TARGET_BENCH_A): $(OBJS_BENCH)
+	ar rcs $(TARGET_BENCH_A) $(OBJS_BENCH)
+	@echo "[Proteus Build]: Created Benchmark Static Archive -> $(TARGET_BENCH_A)"
+
+src/%.bench.o: src/%.c
+	$(CC) $(CFLAGS) -O3 -fvisibility=hidden $(INCLUDES) -c $< -o $@
+
+# ----------------------------------------------------------------------------
+# Profile 2: High-Visibility Debug Engine (-g, -O0, Full GDB/LLDB Access)
+# ----------------------------------------------------------------------------
+debug: $(TARGET_DEBUG_SO) $(TARGET_DEBUG_A)
+
+$(TARGET_DEBUG_SO): $(OBJS_DEBUG)
+	$(CC) -shared -g -O0 $(OBJS_DEBUG) -lpthread -o $(TARGET_DEBUG_SO)
+	@echo "[Proteus Build]: Created Debugging Shared Object -> $(TARGET_DEBUG_SO)"
+
+$(TARGET_DEBUG_A): $(OBJS_DEBUG)
+	ar rcs $(TARGET_DEBUG_A) $(OBJS_DEBUG)
+	@echo "[Proteus Build]: Created Debugging Static Archive  -> $(TARGET_DEBUG_A)"
+
+src/%.debug.o: src/%.c
+	$(CC) $(CFLAGS) -g -O0 -fvisibility=default $(INCLUDES) -c $< -o $@
+
+# ----------------------------------------------------------------------------
+# Submodule Dependency Initialization
+# ----------------------------------------------------------------------------
 init-deps:
 	git submodule update --init --recursive
 
+# ----------------------------------------------------------------------------
+# Clean Build Environment
+# ----------------------------------------------------------------------------
 clean:
-	rm -f src/*.o $(LIB)
-
-.PHONY: all clean init-deps
+	rm -rf src/*.o *.so *.a proteus_stress_*
+	@echo "[Proteus Clean]: Build footprints cleared successfully."

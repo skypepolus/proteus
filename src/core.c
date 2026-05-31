@@ -1,6 +1,7 @@
 #include "arena.h"
 #include "core.h"
 #include "index.h"
+#include "proteus.h"
 #include <sys/mman.h>
 #include <string.h> // For high-performance architecture-optimized memcpy/memset
 #include <errno.h>
@@ -180,12 +181,8 @@ void* proteus_malloc(size_t size_bytes) {
         word_t* huge_hdr  = &new_page->block_words[0];
         word_t  huge_size = PT_HUGE_THRESHOLD_WORDS;
         
-        // Explicitly initialize the raw block snapshot at birth 
-        pt_redblack_t* initial_node = pt_idx_hdr_to_tree(huge_hdr, huge_size);
-        initial_node->hdr[0] = 0; 
-        
-        // Topology balancing layer only—completely decoupled from memory history!
-        pt_idx_tree_insert(home_arena, huge_hdr, huge_size);
+		huge_hdr[0] = PT_HUGE_THRESHOLD_WORDS;
+		pt_idx_tree_insert(home_arena, huge_hdr, huge_size);
     }
 }
 
@@ -247,7 +244,7 @@ void proteus_free(void* ptr) {
         } else if (coalesced_size - advised_size >= 16384) {
             // Unpurged memory on the left has breached our 128KB threshold. Purge it.
             uintptr_t payload_start = (uintptr_t)(final_hdr + 1);
-            uintptr_t payload_end   = (uintptr_t)final_ftr;
+            uintptr_t payload_end   = (uintptr_t)node->hdr;
             
             uintptr_t page_start = (payload_start + 4095) & ~4095;
             uintptr_t page_end   = payload_end & ~4095;
@@ -448,4 +445,34 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
     proteus_free(ptr);
 
     return new_payload;
+}
+
+/* ============================================================================
+ * STANDARD ALLOCATOR INTERPOSITION BRIDGE
+ * ============================================================================ */
+
+PT_EXPORT void* malloc(size_t size) {
+    return proteus_malloc(size);
+}
+
+PT_EXPORT void free(void* ptr) {
+    proteus_free(ptr);
+}
+
+PT_EXPORT void* realloc(void* ptr, size_t size) {
+    return proteus_realloc(ptr, size);
+}
+
+PT_EXPORT int posix_memalign(void** memptr, size_t alignment, size_t size) {
+    return proteus_posix_memalign(memptr, alignment, size);
+}
+
+PT_EXPORT void* calloc(size_t nmemb, size_t size) {
+    size_t total = nmemb * size;
+    void* ptr = proteus_malloc(total);
+    if (ptr) {
+        // Zero-fill allocated tracking space
+        memset(ptr, 0, total);
+    }
+    return ptr;
 }
