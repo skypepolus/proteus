@@ -5,22 +5,29 @@
 #include <hybrid_lock.h>
 #include <pthread.h>
 
-// Extended core arena layout
+#if !defined(__APPLE__)
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <sched.h>
+#endif
+
+// Extended core arena layout - Strictly cache-line isolated to prevent False Sharing
 typedef struct pt_arena {
     struct hybrid lock;
     pt_list_t segregate[2]; // Two small segregated lists
     pt_redblack_t* root;    // Augmented address-ordered First-Fit tree root
-} pt_arena_t;
+} __attribute__((aligned(64))) pt_arena_t;
 
 typedef struct pt_superpage {
     pt_arena_t* arena_ptr;                        // 1 Word
-	word_t reserved_align; // Maintained for strict 2-word header structural alignment
+    word_t      reserved_align;                   // 1 Word (Maintained for strict 2-word header structural alignment)
     word_t ftr[1];                                // 1 Word (Low Zero Sentinel)
     word_t block_words[PT_HUGE_THRESHOLD_WORDS];  // PT_SUPER_PAGE_WORDS - 4 Words
     word_t hdr[1];                                // 1 Word (High Zero Sentinel)
 } pt_superpage_t;
 
-// Change g_pt_num_cores to a standard atomic int
+// Standard atomic int for core counting
 extern _Atomic int g_pt_num_cores;
 extern pt_arena_t* g_pt_arenas;
 
@@ -37,14 +44,16 @@ static inline pt_arena_t* pt_arena_get_local(void) {
         cores = atomic_load_explicit(&g_pt_num_cores, memory_order_acquire);
     }
 
-    uint64_t tid;
+    uint64_t routing_id;
 #if defined(__APPLE__)
-    pthread_threadid_np(pthread_self(), &tid);
+    // XNU Fast-Path: NULL bypasses the pthread_self() lookup layer
+    pthread_threadid_np(NULL, &routing_id);
 #else
-    tid = (uint64_t)pthread_self();
+    // True Hardware Affinity: Routes directly to the physical executing core
+    routing_id = (uint64_t)sched_getcpu();
 #endif
 
-    return &g_pt_arenas[tid % cores];
+    return &g_pt_arenas[routing_id % cores];
 }
 
 #define PT_SUPER_PAGE_BYTES (1ULL << 32) // Strict 4GB tracking scale
