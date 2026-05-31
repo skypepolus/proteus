@@ -90,7 +90,7 @@ void pt_idx_tree_update_augmentation(pt_redblack_t* node) {
 
 void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_words) {
     word_t f_words = node->ftr[0];
-    word_t* old_hdr = pt_idx_tree_to_hdr(node);
+    word_t* old_hdr = pt_idx_tree_to_hdr(node, f_words);
     
     word_t delta = f_words - r_words;
     unsigned state = (delta >= 2) + (delta >= 4) + (delta >= 6) + (delta >= 8);
@@ -141,70 +141,6 @@ void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_
     return user_payload;
 }
 
-static inline void pt_idx_tree_rotate_left(pt_redblack_t** root, pt_redblack_t* x) {
-    pt_redblack_t* y = x->right;
-    
-    // 1. Turn y's left subtree into x's right subtree
-    x->right = y->left;
-    if (y->left != NULL) {
-        y->left->parent = x;
-    }
-    
-    // 2. Link x's parent to y
-    y->parent = x->parent;
-    if (x->parent == NULL) {
-        *root = y;
-    } else if (x == x->parent->left) {
-        x->parent->left = y;
-    } else {
-        x->parent->right = y;
-    }
-    
-    // 3. Put x on y's left
-    y->left = x;
-    x->parent = y;
-    
-    // 4. Critical Augmentation Fix: x is now a child of y.
-    // We must update the size metrics for x first, then y!
-    x->left_max  = pt_idx_tree_subtree_max(x->left);
-    x->right_max = pt_idx_tree_subtree_max(x->right);
-    
-    y->left_max  = pt_idx_tree_subtree_max(y->left);
-    y->right_max = pt_idx_tree_subtree_max(y->right);
-}
-
-static inline void pt_idx_tree_rotate_right(pt_redblack_t** root, pt_redblack_t* y) {
-    pt_redblack_t* x = y->left;
-    
-    // 1. Turn x's right subtree into y's left subtree
-    y->left = x->right;
-    if (x->right != NULL) {
-        x->right->parent = y;
-    }
-    
-    // 2. Link y's parent to x
-    x->parent = y->parent;
-    if (y->parent == NULL) {
-        *root = x;
-    } else if (y == y->parent->left) {
-        y->parent->left = x;
-    } else {
-        y->parent->right = x;
-    }
-    
-    // 3. Put y on x's right
-    x->right = y;
-    y->parent = x;
-    
-    // 4. Critical Augmentation Fix: y is now a child of x.
-    // We must update the size metrics for y first, then x!
-    y->left_max  = pt_idx_tree_subtree_max(y->left);
-    y->right_max = pt_idx_tree_subtree_max(y->right);
-    
-    x->left_max  = pt_idx_tree_subtree_max(x->left);
-    x->right_max = pt_idx_tree_subtree_max(x->right);
-}
-
 void pt_idx_tree_insert(pt_arena_t* arena, word_t* hdr_ptr, word_t size_words) {
     pt_redblack_t* node = pt_idx_hdr_to_tree(hdr_ptr, size_words);
     
@@ -241,9 +177,6 @@ void pt_idx_tree_insert(pt_arena_t* arena, word_t* hdr_ptr, word_t size_words) {
 
     // 2. Propagate initial size metrics up to the root before rebalancing
     pt_idx_tree_update_augmentation(node);
-
-    // 3. Trigger Red-Black Tree Balancing Fixups
-    pt_idx_tree_insert_fixup(&arena->root, node);
 }
 
 // Handles shifting a left tree node rightward within the newly unified block boundaries

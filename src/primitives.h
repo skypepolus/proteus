@@ -43,13 +43,14 @@ typedef struct pt_list {
 } pt_list_t;
 
 typedef struct pt_redblack {
+    word_t hdr[1];              // Localized per-node differential watermark vector tracker
     struct pt_redblack* left;
     struct pt_redblack* right;
     struct pt_redblack* parent;
     word_t color;
     word_t left_max;
     word_t right_max;
-    word_t ftr[1]; // Maps to the physical footer at (hdr_ptr + size - 1)
-} pt_redblack_t;
+    word_t ftr[1];              // Maps to the physical footer at (hdr_ptr + size - 1)
+} __attribute__((aligned(8))) pt_redblack_t;
 
 #endif // PT_PRIMITIVES_H

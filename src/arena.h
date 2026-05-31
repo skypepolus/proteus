@@ -14,7 +14,7 @@ typedef struct pt_arena {
 
 typedef struct pt_superpage {
     pt_arena_t* arena_ptr;                        // 1 Word
-    word_t* tailend_tpr;						  // 1 Word
+	word_t reserved_align; // Maintained for strict 2-word header structural alignment
     word_t ftr[1];                                // 1 Word (Low Zero Sentinel)
     word_t block_words[PT_HUGE_THRESHOLD_WORDS];  // PT_SUPER_PAGE_WORDS - 4 Words
     word_t hdr[1];                                // 1 Word (High Zero Sentinel)
