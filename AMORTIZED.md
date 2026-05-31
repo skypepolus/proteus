@@ -79,19 +79,17 @@ In an LLM continuous batching execution loop, the host-side allocation size dist
 Under this profile, **$\alpha$ drops to roughly $0.40–0.50$**, meaning more than half of all operations bypass the fast paths and hit the Tier 3 tree. This creates an **Inverted Cliff Edge** scenario between Proteus and amortized thread-cached allocators:
 ```text
 Latency
-^
-|                              / [Thread-Cached Allocators]
-|                             /  (Explodes to 250,000+ ns via O(N) traps)
-|                            /
-150|--------------------------+--- [Proteus Ceiling: O(log N)]
-|                          /|
-|                         / |
-
-|                        /  |
-
-15|......................./   |   [Thread-Cached Median: O(1)]
-+--------------------------+-----------------------------> Percentile
-P50                        P99  P99.9
+   ^
+   |                              / [Thread-Cached Allocators]
+   |                             /  (Explodes to 250,000+ ns via O(N) traps)
+   |                            /
+150|---------------------------+--- [Proteus Ceiling: O(log N)]
+   |                          /|
+   |                         / |
+   |                        /  |
+ 15|......................./   |   [Thread-Cached Median: O(1)]
+   +---------------------------+-----------------------------> Percentile
+   P50                        P99  P99.9
 ```
 ### Percentile Boundary Matrix (At 3.5 GHz)
 
