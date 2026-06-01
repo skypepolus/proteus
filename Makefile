@@ -1,8 +1,8 @@
 # ============================================================================
-# Proteus Quad-Target Shared Object & Static Archive Build System
+# Proteus Quad-Target Shared Object & Static Archive Build System (GCC Edition)
 # ============================================================================
 
-CC       = clang
+CC       = gcc
 CFLAGS   = -Wall -Wextra -std=c11 -fPIC -D_GNU_SOURCE
 INCLUDES = -Iinclude -Isrc -Ideps/hybrid-lock/include
 
@@ -41,7 +41,7 @@ src/%.bench.o: src/%.c
 	$(CC) $(CFLAGS) -O3 -fvisibility=hidden $(INCLUDES) -c $< -o $@
 
 # ----------------------------------------------------------------------------
-# Profile 2: High-Visibility Debug Engine (-g, -O0, Full GDB/LLDB Access)
+# Profile 2: High-Visibility Debug Engine (-g, -O0, Full GDB Access, No Interpose)
 # ----------------------------------------------------------------------------
 debug: $(TARGET_DEBUG_SO) $(TARGET_DEBUG_A)
 
@@ -54,7 +54,7 @@ $(TARGET_DEBUG_A): $(OBJS_DEBUG)
 	@echo "[Proteus Build]: Created Debugging Static Archive  -> $(TARGET_DEBUG_A)"
 
 src/%.debug.o: src/%.c
-	$(CC) $(CFLAGS) -g -O0 -fvisibility=default $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -g -O0 -DDEBUG -fvisibility=default $(INCLUDES) -c $< -o $@
 
 # ----------------------------------------------------------------------------
 # Submodule Dependency Initialization
@@ -66,5 +66,5 @@ init-deps:
 # Clean Build Environment
 # ----------------------------------------------------------------------------
 clean:
-	rm -rf src/*.o *.so *.a proteus_stress_*
+	rm -f src/*.o *.so *.a proteus_stress_* tests/integrity_pass
 	@echo "[Proteus Clean]: Build footprints cleared successfully."

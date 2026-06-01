@@ -446,7 +446,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
 
     return new_payload;
 }
-
+#ifndef DEBUG
 /* ============================================================================
  * STANDARD ALLOCATOR INTERPOSITION BRIDGE
  * ============================================================================ */
@@ -476,3 +476,4 @@ PT_EXPORT void* calloc(size_t nmemb, size_t size) {
     }
     return ptr;
 }
+#endif
