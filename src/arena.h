@@ -90,8 +90,7 @@ static inline pt_superpage_t* pt_arena_superpage_new(void) {
 }
 
 static inline pt_superpage_t* pt_arena_superpage(void* ptr) {
-    uintptr_t mask = ~((uintptr_t)PT_SUPER_PAGE_BYTES - 1);
-    return (pt_superpage_t*)((uintptr_t)ptr & mask);
+    return (pt_superpage_t*)((uintptr_t)ptr & PT_SUPER_PAGE_MASK);
 }
 
 #endif // PT_ARENA_H
