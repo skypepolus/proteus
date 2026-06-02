@@ -57,7 +57,7 @@ static inline pt_arena_t* pt_arena_get_local(void) {
     // XNU Fast-Path: NULL bypasses the pthread_self() lookup layer
     pthread_threadid_np(NULL, &routing_id);
 #else
-    // True Hardware Affinity: Routes directly to the physical executing core
+	// Linux / Generic POSIX Fast-Path via vDSO
     routing_id = (uint64_t)sched_getcpu();
 #endif
 

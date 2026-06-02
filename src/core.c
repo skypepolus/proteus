@@ -5,6 +5,7 @@
 #include <sys/mman.h>
 #include <string.h> // For high-performance architecture-optimized memcpy/memset
 #include <errno.h>
+#include <immintrin.h>
 
 static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_words) {
 
