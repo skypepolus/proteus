@@ -30,7 +30,7 @@ all: bench debug
 bench: $(TARGET_BENCH_SO) $(TARGET_BENCH_A)
 
 $(TARGET_BENCH_SO): $(OBJS_BENCH)
-	$(CC) -shared -O3 $(OBJS_BENCH) -lpthread -o $(TARGET_BENCH_SO)
+	$(CC) -shared -O3 -flto -fno-strict-aliasing $(OBJS_BENCH) -lpthread -o $(TARGET_BENCH_SO)
 	@echo "[Proteus Build]: Created Benchmark Shared Object -> $(TARGET_BENCH_SO)"
 
 $(TARGET_BENCH_A): $(OBJS_BENCH)
@@ -38,7 +38,7 @@ $(TARGET_BENCH_A): $(OBJS_BENCH)
 	@echo "[Proteus Build]: Created Benchmark Static Archive -> $(TARGET_BENCH_A)"
 
 src/%.bench.o: src/%.c
-	$(CC) $(CFLAGS) -O3 -fvisibility=hidden $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -O3 -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
 
 # ----------------------------------------------------------------------------
 # Profile 2: High-Visibility Debug Engine (-g, -O0, Full GDB Access, No Interpose)

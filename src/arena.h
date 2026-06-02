@@ -72,7 +72,10 @@ static inline pt_superpage_t* pt_arena_superpage_new(void) {
     if (__builtin_expect(raw_ptr == MAP_FAILED, 0)) {
         return NULL;
     }
-
+#if defined(__linux__)
+    // Advise the kernel to back this 4GB canvas with huge pages to eliminate TLB misses
+    madvise(raw_ptr, allocation_canvas, MADV_HUGEPAGE);
+#endif
     uintptr_t raw_addr = (uintptr_t)raw_ptr;
     uintptr_t alignment_mask = (uintptr_t)PT_SUPER_PAGE_BYTES - 1;
     

@@ -51,6 +51,10 @@ pt_redblack_t* pt_idx_tree_find_first_fit(pt_redblack_t* root, word_t size_words
     pt_redblack_t* current = root;
 
     while (current != NULL) {
+		// Explicitly prefetch the children into the L1 cache (Read intent, high temporal locality)
+        if (current->left)  __builtin_prefetch(current->left, 0, 3);
+        if (current->right) __builtin_prefetch(current->right, 0, 3);
+
         // Step 1: Check lowest memory addresses first (Left Subtree).
         // If a fit exists down here, address-ordering guarantees it's our optimal first-fit.
         if (current->left && current->left_max >= size_words) {

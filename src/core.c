@@ -99,6 +99,8 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
     return NULL; // List caches are fully depleted for these tiers
 }
 
+static void* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t size_words);
+
 void* proteus_malloc(size_t size_bytes) {
 
     word_t size_words = PT_TOTAL_BLOCK_WORDS(size_bytes);
@@ -177,6 +179,14 @@ void* proteus_malloc(size_t size_bytes) {
     // ----------------------------------------------------------------------------
     // PASS C: Slow-Path Fallback (Spin-to-sleep on home anchor)
     // ----------------------------------------------------------------------------
+	return pt_core_allocate_superpage_fallback(home_arena, size_words);
+}
+
+__attribute__((cold, noinline)) 
+static void* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t size_words) {
+
+    void* payload = NULL;
+    // ... logic for pt_arena_superpage_new() and inserting into the tree
     hybrid_lock(&home_arena->lock, MALLOC_SPIN_COUNTER);
     
     while (1) {
