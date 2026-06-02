@@ -96,26 +96,31 @@ void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_
     word_t delta = f_words - r_words;
     unsigned state = (delta >= 2) + (delta >= 4) + (delta >= 6) + (delta >= 8);
     
-    // Format the allocated payload block at the front boundary
-    old_hdr[0] = -r_words;
-    old_hdr[r_words - 1] = -r_words;
-    void* user_payload = (void*)(old_hdr + 1);
-    
-    word_t* remainder_hdr = old_hdr + r_words;
-    
     // Explicitly optimize for the stationary split fast-path
     if (__builtin_expect(state == 4, 1)) {
+        // Safe: delta >= 8 guarantees the new allocated block ends strictly before the tree node
+        old_hdr[0] = -r_words;
+        old_hdr[r_words - 1] = -r_words;
+        
+        word_t* remainder_hdr = old_hdr + r_words;
         remainder_hdr[0] = delta;
         node->ftr[0] = delta; // Update the size tag inside the trailing edge
         
         // Directly recompute the max_sub_size augmentations up to the root
         pt_idx_tree_update_augmentation(node);
-        return user_payload;
+        return (void*)(old_hdr + 1);
     }
     
     // Cold Path: Leftover space is too small to sustain a tree node.
-    // The node must be unlinked and degraded to a lower structural tier.
+    // >>> CRITICAL FIX: Unlink the node BEFORE overwriting its memory with allocation headers! <<<
     pt_idx_tree_unlink(arena, node);
+    
+    // Now it is safe to format the allocated payload block boundaries
+    old_hdr[0] = -r_words;
+    old_hdr[r_words - 1] = -r_words;
+    void* user_payload = (void*)(old_hdr + 1);
+    
+    word_t* remainder_hdr = old_hdr + r_words;
     
     switch(state) {
         case 0:
