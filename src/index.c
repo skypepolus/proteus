@@ -315,8 +315,8 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
      * ============================================================================ */
     switch (final_size) {
         case 2:
-            // CRITICAL CRASH: Absolute heap boundary destruction detected!
-            __builtin_trap(); 
+            // Remnant space (2 words). Completely passive.
+			final_hdr[1] = final_size;
             break;
             
         case 4:

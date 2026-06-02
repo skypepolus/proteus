@@ -7,12 +7,49 @@
 #include <errno.h>
 
 static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_words) {
+
+	pt_link_t* list_4 = &arena->segregate[0].sentinel;
+	pt_link_t* list_6 = &arena->segregate[1].sentinel;
+
+	switch(size_words / 2 - 1) {
+    /* --------------------------------------------------------------------
+     * LANE Z: TARGET IS 2 WORDS (16 BYTES)
+     * -------------------------------------------------------------------- */
+	case 0:
+        // Match 1: True Exact Fit (4-word block available)
+        if (list_4->next != list_4) {
+            pt_link_t* node = list_4->next;
+            word_t* hdr_ptr = pt_idx_link_to_hdr(node, 4);
+            pt_idx_list_unlink(arena, hdr_ptr, 4);
+            
+            hdr_ptr[0] = -2;
+            hdr_ptr[1] = -2;
+            hdr_ptr[2] = 2;
+            hdr_ptr[3] = 2;
+            return (void*)(hdr_ptr + 1);
+        }
+        
+        // Match 2: Segregated Split Fallback (Carve from a 6-word block)
+        if (list_6->next != list_6) {
+            pt_link_t* node = list_6->next;
+            word_t* hdr_ptr = pt_idx_link_to_hdr(node, 6);
+            pt_idx_list_unlink(arena, hdr_ptr, 6);
+            
+            // Format the 4-word allocated chunk at the front
+            hdr_ptr[0] = -2;
+            hdr_ptr[1] = -2;
+            
+            // Format the remaining 2 words as a passive Pure Remnant
+            word_t* remainder_hdr = hdr_ptr + 2;
+			pt_idx_list_insert(arena, remainder_hdr, 4);
+            
+            return (void*)(hdr_ptr + 1);
+        }
+		break;
     /* --------------------------------------------------------------------
      * LANE A: TARGET IS 4 WORDS (32 BYTES)
      * -------------------------------------------------------------------- */
-    if (size_words == 4) {
-        pt_link_t* list_4 = &arena->segregate[0].sentinel;
-        
+	case 1:
         // Match 1: True Exact Fit (4-word block available)
         if (list_4->next != list_4) {
             pt_link_t* node = list_4->next;
@@ -23,8 +60,6 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
             hdr_ptr[3] = -4;
             return (void*)(hdr_ptr + 1);
         }
-        
-        pt_link_t* list_6 = &arena->segregate[1].sentinel;
         
         // Match 2: Segregated Split Fallback (Carve from a 6-word block)
         if (list_6->next != list_6) {
@@ -43,14 +78,11 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
             
             return (void*)(hdr_ptr + 1);
         }
-    }
-
+		break;
     /* --------------------------------------------------------------------
      * LANE B: TARGET IS 6 WORDS (48 BYTES)
      * -------------------------------------------------------------------- */
-    if (size_words == 6) {
-        pt_link_t* list_6 = &arena->segregate[1].sentinel;
-        
+	case 2:
         // Exact Fit Match Only
         if (list_6->next != list_6) {
             pt_link_t* node = list_6->next;
@@ -61,16 +93,13 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
             hdr_ptr[5] = -6;
             return (void*)(hdr_ptr + 1);
         }
+		break;
     }
 
     return NULL; // List caches are fully depleted for these tiers
 }
 
 void* proteus_malloc(size_t size_bytes) {
-    if (__builtin_expect(size_bytes == 0, 0)) {
-		// >>> CRITICAL FIX: Force minimum allocation size so LD_PRELOAD doesn't return NULL
-        size_bytes = 1;
-    }
 
     word_t size_words = PT_TOTAL_BLOCK_WORDS(size_bytes);
     
@@ -297,7 +326,7 @@ int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {
         return 0;
     }
 
-/* ============================================================================
+    /* ============================================================================
      * LANE 2: ARENA-BASED ALIGNMENT CARVING (ALIGNMENT > 16 BYTES)
      * ============================================================================ */
     // Request enough padding to guarantee we can shift up to the alignment boundary
@@ -389,7 +418,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
     if (size_bytes == 0) {
         proteus_free(ptr);
 		// >>> CRITICAL FIX: Return a valid pointer instead of NULL
-        return proteus_malloc(1);
+        return proteus_malloc(0);
     }
 
     word_t* hdr_ptr = (word_t*)ptr - 1;
