@@ -68,7 +68,8 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
 
 void* proteus_malloc(size_t size_bytes) {
     if (__builtin_expect(size_bytes == 0, 0)) {
-        return NULL;
+		// >>> CRITICAL FIX: Force minimum allocation size so LD_PRELOAD doesn't return NULL
+        size_bytes = 1;
     }
 
     word_t size_words = PT_TOTAL_BLOCK_WORDS(size_bytes);
@@ -274,8 +275,8 @@ int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {
         return EINVAL;
     }
     if (size_bytes == 0) {
-        *memptr = NULL;
-        return 0;
+		// >>> CRITICAL FIX: Prevent NULL memptr for 0-byte aligned requests
+        size_bytes = 1;
     }
 
     // Compute uniform size metrics: payload words + 2 structural words (Header + Ghost Footer)
@@ -335,7 +336,8 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
     }
     if (size_bytes == 0) {
         proteus_free(ptr);
-        return NULL;
+		// >>> CRITICAL FIX: Return a valid pointer instead of NULL
+        return proteus_malloc(1);
     }
 
     word_t* hdr_ptr = (word_t*)ptr - 1;

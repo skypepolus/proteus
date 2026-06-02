@@ -101,13 +101,14 @@ static void pt_arena_init_routine(void) {
         arena->root = NULL;
     }
 
-	// Inside your pt_arena_init_routine:
-	pthread_atfork(pt_arena_prepare_fork, pt_arena_parent_fork, pt_arena_child_fork);
 
 	// Finally, store the core count using Release semantics. 
     // This forms a memory barrier that guarantees all preceding arena 
     // configurations are fully visible to any thread reading via Acquire.
     atomic_store_explicit(&g_pt_num_cores, detected_cores, memory_order_release);
+
+	// Bind the fork handlers AFTER the core count is published
+	pthread_atfork(pt_arena_prepare_fork, pt_arena_parent_fork, pt_arena_child_fork);
 }
 
 void pt_arena_env_bootstrap(void) {
