@@ -297,8 +297,60 @@ int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {
         return 0;
     }
 
+/* ============================================================================
+     * LANE 2: ARENA-BASED ALIGNMENT CARVING (ALIGNMENT > 16 BYTES)
+     * ============================================================================ */
+    // Request enough padding to guarantee we can shift up to the alignment boundary
+    size_t request_bytes = size_bytes + alignment;
+    word_t request_words = PT_TOTAL_BLOCK_WORDS(request_bytes);
+
+    if (request_words <= PT_HUGE_THRESHOLD_WORDS) {
+        // 1. Allocate a raw block large enough from the arena
+        void* raw_ptr = proteus_malloc(request_bytes);
+        if (__builtin_expect(raw_ptr == NULL, 0)) {
+            return ENOMEM;
+        }
+
+        word_t* base_hdr = (word_t*)raw_ptr - 1;
+        word_t  base_size = -base_hdr[0]; // Active blocks are negatively stamped
+
+        // 2. Find the aligned payload boundary inside the raw payload
+        uintptr_t raw_payload = (uintptr_t)raw_ptr;
+        uintptr_t aligned_payload = (raw_payload + alignment - 1) & ~(alignment - 1);
+
+        // 3. Calculate structural boundaries
+        word_t left_shift_words = (aligned_payload - raw_payload) / sizeof(word_t);
+        word_t right_size = base_size - left_shift_words - size_words;
+
+        word_t* aligned_hdr = base_hdr + left_shift_words;
+
+        // 4. Format the target aligned block
+        aligned_hdr[0] = -size_words;
+        aligned_hdr[size_words - 1] = -size_words;
+
+        // 5. Release the left remnant safely back to the arena
+        if (left_shift_words > 0) {
+            // Trick free() into thinking this is an allocated block
+            base_hdr[0] = -left_shift_words;
+            base_hdr[left_shift_words - 1] = -left_shift_words;
+            proteus_free(base_hdr + 1);
+        }
+
+        // 6. Release the right remnant safely back to the arena
+        if (right_size > 0) {
+            word_t* right_hdr = aligned_hdr + size_words;
+            // Trick free() into thinking this is an allocated block
+            right_hdr[0] = -right_size;
+            right_hdr[right_size - 1] = -right_size;
+            proteus_free(right_hdr + 1);
+        }
+
+        *memptr = (void*)aligned_payload;
+        return 0;
+    }
+
     /* ============================================================================
-     * LANE 2: DIRECT-MMAP ALIGNMENT PROMOTION (ALIGNMENT > 16 BYTES)
+     * LANE 3: DIRECT-MMAP ALIGNMENT PROMOTION (HUGE TIER)
      * ============================================================================ */
     // Oversize the virtual memory canvas to guarantee room for the alignment shift
     // plus our 3-word system metadata block layout.
