@@ -318,9 +318,8 @@ int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {
         size_bytes = 1;
     }
 
-    // Compute uniform size metrics: payload words + 2 structural words (Header + Ghost Footer)
-    word_t payload_words = (size_bytes + sizeof(word_t) - 1) / sizeof(word_t);
-    word_t size_words    = payload_words + 2;
+	// Compute uniform size metrics adhering strictly to the 16-byte structural alignment
+    word_t size_words = PT_TOTAL_BLOCK_WORDS(size_bytes);
 
     /* ============================================================================
      * LANE 1: STANDARD MALLOC ROUTING (ALIGNMENT <= 16 BYTES)
@@ -336,7 +335,7 @@ int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {
         return 0;
     }
 
-    /* ============================================================================
+	/* ============================================================================
      * LANE 2: ARENA-BASED ALIGNMENT CARVING (ALIGNMENT > 16 BYTES)
      * ============================================================================ */
     // Request enough padding to guarantee we can shift up to the alignment boundary
@@ -363,24 +362,37 @@ int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {
 
         word_t* aligned_hdr = base_hdr + left_shift_words;
 
+        // ---> NEW: Acquire arena lock to safely mutate boundaries <---
+        pt_superpage_t* superpage = pt_arena_superpage(raw_ptr);
+        pt_arena_t* arena = superpage->arena_ptr;
+        hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER);
+
         // 4. Format the target aligned block
         aligned_hdr[0] = -size_words;
         aligned_hdr[size_words - 1] = -size_words;
 
-        // 5. Release the left remnant safely back to the arena
+        // 5. Setup the left remnant boundaries
         if (left_shift_words > 0) {
-            // Trick free() into thinking this is an allocated block
             base_hdr[0] = -left_shift_words;
             base_hdr[left_shift_words - 1] = -left_shift_words;
-            proteus_free(base_hdr + 1);
         }
 
-        // 6. Release the right remnant safely back to the arena
+        // 6. Setup the right remnant boundaries
         if (right_size > 0) {
             word_t* right_hdr = aligned_hdr + size_words;
-            // Trick free() into thinking this is an allocated block
             right_hdr[0] = -right_size;
             right_hdr[right_size - 1] = -right_size;
+        }
+
+        // ---> NEW: Drop the lock before calling free() to prevent deadlocks <---
+        hybrid_unlock(&arena->lock); 
+
+        // 7. Release the remnants safely back to the arena
+        if (left_shift_words > 0) {
+            proteus_free(base_hdr + 1);
+        }
+        if (right_size > 0) {
+            word_t* right_hdr = aligned_hdr + size_words;
             proteus_free(right_hdr + 1);
         }
 

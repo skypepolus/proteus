@@ -83,8 +83,17 @@ pt_redblack_t* pt_idx_tree_find_first_fit(pt_redblack_t* root, word_t size_words
 
 void pt_idx_tree_update_augmentation(pt_redblack_t* node) {
     while (node != NULL) {
+		word_t old_left = node->left_max;
+        word_t old_right = node->right_max;
+        
         node->left_max  = pt_idx_tree_subtree_max(node->left);
         node->right_max = pt_idx_tree_subtree_max(node->right);
+        
+        // If neither child's capacity changed, the parent's capacity cannot change.
+        if (old_left == node->left_max && old_right == node->right_max) {
+            break;
+        }
+        
         node = node->parent; // Ascend up to the root
     }
 }
