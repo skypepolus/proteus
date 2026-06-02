@@ -185,18 +185,16 @@ void* proteus_malloc(size_t size_bytes) {
 
 __attribute__((cold, noinline)) 
 static void* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t size_words) {
-
-    void* payload = NULL;
-    // ... logic for pt_arena_superpage_new() and inserting into the tree
     hybrid_lock(&home_arena->lock, MALLOC_SPIN_COUNTER);
     
     while (1) {
         // 1. Try home segregated list under heavy lock
-        payload = pt_core_try_segregated_alloc(home_arena, size_words);
+        void* payload = pt_core_try_segregated_alloc(home_arena, size_words);
         if (payload != NULL) {
             hybrid_unlock(&home_arena->lock);
             return payload;
         }
+        
         // 2. Try home tree under heavy lock
         pt_redblack_t* found_node = pt_idx_tree_find_first_fit(home_arena->root, size_words);
         if (found_node != NULL) {
@@ -205,25 +203,27 @@ static void* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t 
             return payload;
         }
 
-		pt_superpage_t* new_page;
+        // 3. Fallback to expensive page creation since the arena is completely dry
+        pt_superpage_t* new_page = NULL;
 
-		if((home_arena->empty_superpage_cache)) {
-			new_page = home_arena->empty_superpage_cache;
-			home_arena->empty_superpage_cache = NULL;
-		} else {  
-			/* --- Inside proteus_malloc's Slow-Path Page Allocation Gate --- */
-			hybrid_unlock(&home_arena->lock); // Drop lock so others can use the arena
+        if (home_arena->empty_superpage_cache) {
+            new_page = home_arena->empty_superpage_cache;
+            home_arena->empty_superpage_cache = NULL;
+        } else {  
+            /* --- Inside proteus_malloc's Slow-Path Page Allocation Gate --- */
+            hybrid_unlock(&home_arena->lock); // Drop lock so others can use the arena
 
-			new_page = pt_arena_superpage_new(); // Expensive OS call
+            new_page = pt_arena_superpage_new(); // Expensive OS call
 
-			hybrid_lock(&home_arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
+            hybrid_lock(&home_arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
         
-			if (__builtin_expect(new_page == NULL, 0)) {
-				hybrid_unlock(&home_arena->lock);
-				return NULL;
-			}
-		}
+            if (__builtin_expect(new_page == NULL, 0)) {
+                hybrid_unlock(&home_arena->lock);
+                return NULL;
+            }
+        }
         
+        // This structural initialization must ONLY happen for a newly minted page
         new_page->arena_ptr = home_arena;
         new_page->ftr[0]    = 0; // Low Zero Sentinel
         new_page->hdr[0]    = 0; // High Zero Sentinel
@@ -231,8 +231,10 @@ static void* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t 
         word_t* huge_hdr  = &new_page->block_words[0];
         word_t  huge_size = PT_HUGE_THRESHOLD_WORDS;
         
-		huge_hdr[0] = PT_HUGE_THRESHOLD_WORDS;
-		pt_idx_tree_insert(home_arena, huge_hdr, huge_size);
+        huge_hdr[0] = PT_HUGE_THRESHOLD_WORDS;
+        pt_idx_tree_insert(home_arena, huge_hdr, huge_size);
+        
+        // Loop will iterate exactly once more to safely extract and split from our newly added page
     }
 }
 
@@ -413,9 +415,11 @@ int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {
 
         word_t* aligned_hdr = base_hdr + left_shift_words;
 
-        // ---> NEW: Acquire arena lock to safely mutate boundaries <---
+		// === ENCAPSULATE CRITICAL MUTATION SECTION ===
         pt_superpage_t* superpage = pt_arena_superpage(raw_ptr);
         pt_arena_t* arena = superpage->arena_ptr;
+
+		// Secure exclusive access to boundary tags before any modifications occur
         hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER);
 
         // 4. Format the target aligned block
@@ -435,8 +439,9 @@ int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {
             right_hdr[right_size - 1] = -right_size;
         }
 
-        // ---> NEW: Drop the lock before calling free() to prevent deadlocks <---
+		// Safely unlock before passing remnants to free(), preventing deadlocks completely
         hybrid_unlock(&arena->lock); 
+        // === END OF CRITICAL SECTION ===
 
         // 7. Release the remnants safely back to the arena
         if (left_shift_words > 0) {
