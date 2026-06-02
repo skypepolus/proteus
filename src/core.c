@@ -403,7 +403,9 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
         return ptr; 
     }
 
-	pt_arena_t* arena = pt_arena_get_local();
+	// >>> CRITICAL FIX 4: Route realloc to the block's true hardware home arena, NOT the local thread! <<<
+    pt_superpage_t* superpage = pt_arena_superpage(ptr);
+    pt_arena_t* arena = superpage->arena_ptr;
 
     hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER);
 
