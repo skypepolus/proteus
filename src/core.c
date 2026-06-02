@@ -255,25 +255,6 @@ void proteus_free(void* ptr) {
     word_t coalesced_size;
     word_t* final_hdr = pt_idx_coalesce_state_machine(arena, hdr_ptr, ftr_ptr, &coalesced_size);
 
-    if (__builtin_expect(coalesced_size == PT_HUGE_THRESHOLD_WORDS, 0)) {
-       	if((arena->root->left)||(arena->root->right)) { 
-			// 1. Unlink from the tree first so it becomes invisible to the allocator
-			pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, coalesced_size));
-			void* superpage_base = (void*)superpage;
-			if((arena->empty_superpage_cache)) { 
-				// 2. Drop the lock BEFORE the system call
-				hybrid_unlock(&arena->lock); 
-
-				// 3. Unmap safely in parallel
-				munmap(superpage_base, PT_SUPER_PAGE_BYTES);
-			} else {
-				arena->empty_superpage_cache = superpage_base; 
-				hybrid_unlock(&arena->lock); 
-			}
-			return;
-       	}
-    }
-
 	/* ============================================================================
      * THE UNIFIED DIFFERENTIAL WATERMARK ADVISORY FILTER
      * ============================================================================ */
@@ -327,6 +308,25 @@ void proteus_free(void* ptr) {
                 node->hdr[0] = (final_ftr + 1) - (word_t*)page_start;
             }
         }
+    }
+
+    if (__builtin_expect(coalesced_size == PT_HUGE_THRESHOLD_WORDS, 0)) {
+       	if((arena->root->left)||(arena->root->right)) { 
+			// 1. Unlink from the tree first so it becomes invisible to the allocator
+			pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, coalesced_size));
+			void* superpage_base = (void*)superpage;
+			if((arena->empty_superpage_cache)) { 
+				// 2. Drop the lock BEFORE the system call
+				hybrid_unlock(&arena->lock); 
+
+				// 3. Unmap safely in parallel
+				munmap(superpage_base, PT_SUPER_PAGE_BYTES);
+			} else {
+				arena->empty_superpage_cache = superpage_base; 
+				hybrid_unlock(&arena->lock); 
+			}
+			return;
+       	}
     }
 
     hybrid_unlock(&arena->lock);
