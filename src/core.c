@@ -315,9 +315,12 @@ int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {
 
     // Anchor the 3-word tracking structure immediately behind the aligned payload boundary
     word_t* hdr_ptr = (word_t*)aligned_payload - 1;
+
+	// >>> CRITICAL FIX 1: Ensure size_words breaches the huge threshold so free() routes it to munmap <<<
+    word_t encoded_size = (size_words > PT_HUGE_THRESHOLD_WORDS) ? size_words : (PT_HUGE_THRESHOLD_WORDS + size_words);
     
     // Stamp your layout invariants perfectly
-    hdr_ptr[0]  = -size_words;          // Universal uniform size (tells free() it's huge)
+    hdr_ptr[0]  = -encoded_size;          // Universal uniform size (tells free() it's huge)
     hdr_ptr[-1] = (word_t)total_mmap_bytes; // Raw byte count for munmap
     hdr_ptr[-2] = (word_t)mmap_base;        // Original OS pointer for munmap
 
@@ -360,10 +363,17 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
             return NULL; // Protect original block if allocation fails
         }
 
-        // Polymorphic Copy Size Evaluation:
-        // Huge block payload length is exactly 'current_size' words.
-        // Managed block payload length is 'current_size - 2' words.
-        word_t active_payload_words = current_is_huge ? current_size : (current_size - 2);
+		// >>> CRITICAL FIX 2: Safely derive physical payload bounds from the original mmap parameters <<<
+        word_t active_payload_words;
+        if (current_is_huge) {
+            size_t total_mmap_bytes = (size_t)hdr_ptr[-1];
+            void* mmap_base         = (void*)hdr_ptr[-2];
+            size_t actual_payload_bytes = total_mmap_bytes - ((uintptr_t)ptr - (uintptr_t)mmap_base);
+            active_payload_words = actual_payload_bytes / sizeof(word_t);
+        } else {
+            active_payload_words = current_size - 2;
+        }
+        
         word_t words_to_copy = (active_payload_words < target_size) ? active_payload_words : target_size;
 
         memcpy(new_payload, ptr, PT_WORDS_TO_BYTES(words_to_copy));
@@ -399,32 +409,31 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
 
     // High-Speed In-Place Rightward Expansion Shortcut
     if (right_tag > 0 && (current_size + right_tag) >= target_size) {
-        word_t total_combined_size = current_size + right_tag;
-        
-        // Unlink the right neighbor from its tracking tier
-        if (right_tag == 4 || right_tag == 6) {
-            pt_idx_list_unlink(arena, right_hdr, right_tag);
-        } else if (right_tag >= 8) {
-            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(right_hdr, right_tag));
-        }
-
+		word_t total_combined_size = current_size + right_tag;
         word_t delta = total_combined_size - target_size;
         unsigned state = (delta >= 2) + (delta >= 4) + (delta >= 6) + (delta >= 8);
-        
+
         if (state == 4) {
-            // Stationary Tree Split
+            // >>> CRITICAL FIX: True Stationary Tree Split. Do NOT unlink from the tree! <<<
             word_t* remainder_hdr = hdr_ptr + target_size;
             remainder_hdr[0] = delta;
-            
+
             pt_redblack_t* right_node = pt_idx_hdr_to_tree(right_hdr, right_tag);
             right_node->ftr[0] = delta;
-            
+
             pt_idx_tree_update_augmentation(right_node);
-            
+
             hdr_ptr[0] = -target_size;
             hdr_ptr[target_size - 1] = -target_size;
         } else {
-            // Absorb full neighbor chunk (Slack remains inside the block)
+            // Absorb full neighbor chunk: Safely unlink it from current tracking tier
+            if (right_tag == 4 || right_tag == 6) {
+                pt_idx_list_unlink(arena, right_hdr, right_tag);
+            } else if (right_tag >= 8) {
+                pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(right_hdr, right_tag));
+            }
+
+            // Slack remains inside the block
             hdr_ptr[0] = -total_combined_size;
             hdr_ptr[total_combined_size - 1] = -total_combined_size;
         }
