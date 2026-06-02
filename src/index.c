@@ -358,6 +358,10 @@ void pt_idx_tree_insert(pt_arena_t* arena, word_t* final_hdr, word_t final_size)
         y->right = z;
     }
 
+	// >>> CRITICAL FIX: Propagate augmentations up the tree BEFORE 
+    // the 'z' pointer is mutated by the structural balancing loop <<<
+    pt_node_propagate_aug(z);
+
     // Fix any double-red violations up the insertion trail
     while (z != arena->root && z->parent->color == PT_RB_RED) {
         if (z->parent == z->parent->parent->left) {
@@ -396,9 +400,6 @@ void pt_idx_tree_insert(pt_arena_t* arena, word_t* final_hdr, word_t final_size)
     }
     
     arena->root->color = PT_RB_BLACK;
-    
-    // Bubble up and correct all structural size augmentations
-    pt_node_propagate_aug(z);
 }
 
 // Internal helper to exchange topological tree relationships without altering block data
