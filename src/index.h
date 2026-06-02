@@ -95,7 +95,14 @@ static inline void pt_node_update_aug(pt_redblack_t* n) {
 // Bubbles augmentation corrections from a modified node all the way up to the root anchor
 static inline void pt_node_propagate_aug(pt_redblack_t* n) {
     while (n) {
+		word_t old_total = pt_node_total_max(n);
         pt_node_update_aug(n);
+        
+        // If the total capacity of this subtree remains mathematically identical,
+        // we halt propagation instantly.
+        if (old_total == pt_node_total_max(n)) {
+            break; 
+        }
         n = n->parent;
     }
 }

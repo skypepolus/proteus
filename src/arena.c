@@ -7,11 +7,13 @@
 #include <sys/sysctl.h>
 #endif
 
+#include <stdatomic.h>
+
+static atomic_flag g_bootstrap_lock = ATOMIC_FLAG_INIT;
+
 // Global internal symbols
 _Atomic int g_pt_num_cores = 0;
 pt_arena_t* g_pt_arenas = NULL;
-
-static pthread_once_t g_bootstrap_once = PTHREAD_ONCE_INIT;
 
 void pt_arena_prepare_fork(void) {
     // Acquire EVERY arena lock sequentially before the fork occurs
@@ -112,5 +114,18 @@ static void pt_arena_init_routine(void) {
 }
 
 void pt_arena_env_bootstrap(void) {
-    pthread_once(&g_bootstrap_once, pt_arena_init_routine);
+// Fast-path exit
+    if (atomic_load_explicit(&g_pt_num_cores, memory_order_acquire) > 0) return;
+    
+    // Spin until we secure the bootstrap rights
+    while (atomic_flag_test_and_set_explicit(&g_bootstrap_lock, memory_order_acquire)) {
+        platform_spin_pause();
+    }
+    
+    // Double-checked locking pattern
+    if (atomic_load_explicit(&g_pt_num_cores, memory_order_relaxed) == 0) {
+        pt_arena_init_routine();
+    }
+    
+    atomic_flag_clear_explicit(&g_bootstrap_lock, memory_order_release);
 }

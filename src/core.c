@@ -195,9 +195,11 @@ void* proteus_malloc(size_t size_bytes) {
         }
 
 		/* --- Inside proteus_malloc's Slow-Path Page Allocation Gate --- */
-        atomic_fetch_add_explicit(&home_arena->lock.wait, 1, memory_order_relaxed);
-        pt_superpage_t* new_page = pt_arena_superpage_new();
-        atomic_fetch_sub_explicit(&home_arena->lock.wait, 1, memory_order_relaxed);
+		hybrid_unlock(&home_arena->lock); // Drop lock so others can use the arena
+
+		pt_superpage_t* new_page = pt_arena_superpage_new(); // Expensive OS call
+
+		hybrid_lock(&home_arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
         
         if (__builtin_expect(new_page == NULL, 0)) {
             hybrid_unlock(&home_arena->lock);
@@ -248,13 +250,15 @@ void proteus_free(void* ptr) {
 
     if (__builtin_expect(coalesced_size == PT_HUGE_THRESHOLD_WORDS, 0)) {
        	if((arena->root->left)||(arena->root->right)) { 
-            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, coalesced_size));
-			// Super-Page Absolute Eviction Guard
+			// 1. Unlink from the tree first so it becomes invisible to the allocator
+			pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, coalesced_size));
 			void* superpage_base = (void*)superpage;
-			atomic_fetch_add_explicit(&arena->lock.wait, 1, memory_order_relaxed);
+        
+			// 2. Drop the lock BEFORE the system call
+			hybrid_unlock(&arena->lock); 
+        
+			// 3. Unmap safely in parallel
 			munmap(superpage_base, PT_SUPER_PAGE_BYTES);
-			atomic_fetch_sub_explicit(&arena->lock.wait, 1, memory_order_relaxed);
-			hybrid_unlock(&arena->lock);
 			return;
        	}
     }
@@ -282,7 +286,13 @@ void proteus_free(void* ptr) {
             
             if (page_start < page_end) {
                 atomic_fetch_add_explicit(&arena->lock.wait, 1, memory_order_relaxed);
-                madvise((void*)page_start, page_end - page_start, MADV_FREE);
+			#if defined(__linux__)
+				// Instantly drops RSS, preventing Kubernetes OOM terminations
+				madvise((void*)page_start, page_end - page_start, MADV_DONTNEED);
+			#else
+				// Darwin/BSD handles MADV_FREE aggressively enough for safe use
+				madvise((void*)page_start, page_end - page_start, MADV_FREE);
+			#endif
                 atomic_fetch_sub_explicit(&arena->lock.wait, 1, memory_order_relaxed);
                 
                 // Set the new vector: Exact words from the new page_start to the absolute end
