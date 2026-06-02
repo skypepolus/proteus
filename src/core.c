@@ -438,6 +438,10 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
                 word_t* remainder_hdr = hdr_ptr + target_size;
                 hdr_ptr[0] = -target_size;
                 hdr_ptr[target_size - 1] = -target_size;
+
+				// >>> CRITICAL FIX: Stamp the free block header before inserting into the tree <<<
+                remainder_hdr[0] = delta;
+
                 pt_idx_tree_insert(arena, remainder_hdr, delta);
             } else if (state == 2 || state == 3) {
                 word_t* remainder_hdr = hdr_ptr + target_size;
