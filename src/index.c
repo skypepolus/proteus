@@ -163,7 +163,16 @@ static inline void pt_idx_tree_migrate_rightward(pt_arena_t* arena, pt_redblack_
     
     // 1. Shallow Copy structural descriptors instantly
 	// >>> CRITICAL FIX: Prevent undefined behavior on overlapping struct memory <<<
-    memmove(new_node, old_node, sizeof(pt_redblack_t));
+	intptr_t* new_hdr = new_node->hdr;
+	intptr_t* old_hdr = old_node->hdr;
+	new_hdr[7] = old_hdr[7];
+	new_hdr[6] = old_hdr[6];
+	new_hdr[5] = old_hdr[5];
+	new_hdr[4] = old_hdr[4];
+	new_hdr[3] = old_hdr[3];
+	new_hdr[2] = old_hdr[2];
+	new_hdr[1] = old_hdr[1];
+	new_hdr[0] = old_hdr[0];
 
     new_node->ftr[0] = final_size; // Inject new unified size tag
     

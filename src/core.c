@@ -313,10 +313,6 @@ int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {
     if (__builtin_expect((alignment & (alignment - 1)) != 0 || alignment % sizeof(void*) != 0, 0)) {
         return EINVAL;
     }
-    if (size_bytes == 0) {
-		// >>> CRITICAL FIX: Prevent NULL memptr for 0-byte aligned requests
-        size_bytes = 1;
-    }
 
 	// Compute uniform size metrics adhering strictly to the 16-byte structural alignment
     word_t size_words = PT_TOTAL_BLOCK_WORDS(size_bytes);
@@ -588,6 +584,16 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
  * STANDARD ALLOCATOR INTERPOSITION BRIDGE
  * ============================================================================ */
 
+#if defined(__linux__) || defined(__ELF__)
+
+// 1. Zero-Cost Hardware Aliasing (Linux / ELF)
+PT_EXPORT void* malloc(size_t size) __attribute__((alias("proteus_malloc")));
+PT_EXPORT void  free(void* ptr) __attribute__((alias("proteus_free")));
+PT_EXPORT void* realloc(void* ptr, size_t size) __attribute__((alias("proteus_realloc")));
+PT_EXPORT int   posix_memalign(void** memptr, size_t alignment, size_t size) __attribute__((alias("proteus_posix_memalign")));
+
+#else
+
 PT_EXPORT void* malloc(size_t size) {
     return proteus_malloc(size);
 }
@@ -603,6 +609,8 @@ PT_EXPORT void* realloc(void* ptr, size_t size) {
 PT_EXPORT int posix_memalign(void** memptr, size_t alignment, size_t size) {
     return proteus_posix_memalign(memptr, alignment, size);
 }
+
+#endif
 
 PT_EXPORT void* calloc(size_t nmemb, size_t size) {
     size_t total = nmemb * size;
