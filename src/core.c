@@ -71,7 +71,7 @@ void* proteus_malloc(size_t size_bytes) {
         return NULL;
     }
 
-    word_t size_words = PT_BYTES_TO_WORDS(size_bytes);
+    word_t size_words = PT_TOTAL_BLOCK_WORDS(size_bytes);
     
     /* ============================================================================
      * LANE 1: DIRECT-MMAP BYPASS (HUGE TIER)
@@ -216,22 +216,23 @@ void proteus_free(void* ptr) {
     word_t coalesced_size;
     word_t* final_hdr = pt_idx_coalesce_state_machine(arena, hdr_ptr, ftr_ptr, &coalesced_size);
 
-    // Super-Page Absolute Eviction Guard
     if (__builtin_expect(coalesced_size == PT_HUGE_THRESHOLD_WORDS, 0)) {
-        void* superpage_base = (void*)superpage;
-        
-        atomic_fetch_add_explicit(&arena->lock.wait, 1, memory_order_relaxed);
-        munmap(superpage_base, PT_SUPER_PAGE_BYTES);
-        atomic_fetch_sub_explicit(&arena->lock.wait, 1, memory_order_relaxed);
-        
-        hybrid_unlock(&arena->lock);
-        return;
+       	if((arena->root->left)||(arena->root->right)) { 
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, coalesced_size));
+			// Super-Page Absolute Eviction Guard
+			void* superpage_base = (void*)superpage;
+			atomic_fetch_add_explicit(&arena->lock.wait, 1, memory_order_relaxed);
+			munmap(superpage_base, PT_SUPER_PAGE_BYTES);
+			atomic_fetch_sub_explicit(&arena->lock.wait, 1, memory_order_relaxed);
+			hybrid_unlock(&arena->lock);
+			return;
+       	}
     }
 
 	/* ============================================================================
      * THE UNIFIED DIFFERENTIAL WATERMARK ADVISORY FILTER
      * ============================================================================ */
-    if (coalesced_size >= 16384) { 
+    if (coalesced_size >= PT_INDEX_WATERMARK_WORDS + 8) { 
         pt_redblack_t* node = pt_idx_hdr_to_tree(final_hdr, coalesced_size);
         word_t* final_ftr   = final_hdr + coalesced_size - 1;
         
@@ -241,13 +242,13 @@ void proteus_free(void* ptr) {
             // Malloc splitting consumed our old watermark in the interim; lazily heal the state
             node->hdr[0] = coalesced_size;
             
-        } else if (coalesced_size - advised_size >= 16384) {
+        } else if (coalesced_size - advised_size >= PT_INDEX_WATERMARK_WORDS) {
             // Unpurged memory on the left has breached our 128KB threshold. Purge it.
             uintptr_t payload_start = (uintptr_t)(final_hdr + 1);
             uintptr_t payload_end   = (uintptr_t)node->hdr;
             
-            uintptr_t page_start = (payload_start + 4095) & ~4095;
-            uintptr_t page_end   = payload_end & ~4095;
+            uintptr_t page_start = (payload_start + arena->page_mask) & ~arena->page_mask;
+            uintptr_t page_end   = payload_end & ~arena->page_mask;
             
             if (page_start < page_end) {
                 atomic_fetch_add_explicit(&arena->lock.wait, 1, memory_order_relaxed);
@@ -338,7 +339,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
     if (__builtin_expect(0 <= *hdr_ptr, 0)) __builtin_trap(); // Guard against corruption
     
     word_t current_size = -*hdr_ptr;
-    word_t target_size  = PT_BYTES_TO_WORDS(size_bytes);
+    word_t target_size  = PT_TOTAL_BLOCK_WORDS(size_bytes);
 
     bool current_is_huge = (current_size > PT_HUGE_THRESHOLD_WORDS);
     bool target_is_huge  = (target_size > PT_HUGE_THRESHOLD_WORDS);

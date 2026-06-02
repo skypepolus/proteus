@@ -16,6 +16,10 @@ typedef intptr_t word_t;
 
 // Round up requested bytes to ensure the user payload is a multiple of 2 words (16 bytes)
 #define PT_BYTES_TO_WORDS(bytes) ((((bytes) + 15) & ~15) / PT_WORD_SIZE_BYTES)
+
+// Total Structural Block Calculator (Payload Words + 1 Header Word + 1 Footer Word)
+#define PT_TOTAL_BLOCK_WORDS(bytes) (PT_BYTES_TO_WORDS(bytes) + 2)
+
 #define PT_WORDS_TO_BYTES(words) ((words) * PT_WORD_SIZE_BYTES)
 
 #ifndef PT_SUPER_PAGE_BYTES
@@ -28,6 +32,12 @@ typedef intptr_t word_t;
 #define PT_SUPER_PAGE_WORDS      (PT_SUPER_PAGE_BYTES / PT_WORD_SIZE_BYTES)
 
 #define PT_HUGE_THRESHOLD_WORDS  (PT_SUPER_PAGE_WORDS - 4)
+
+// Watermark threshold for the Unified Differential Filter (16384 words = 128 KiB)
+#define PT_INDEX_WATERMARK_WORDS     16384
+
+// Default fallback page dimensions if runtime detection isn't stored locally
+#define PT_DEFAULT_PAGE_BYTES        4096
 
 /* ============================================================================
  * TRAILING-EDGE STRUCTURAL OVERLAYS

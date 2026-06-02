@@ -54,7 +54,7 @@ $(TARGET_DEBUG_A): $(OBJS_DEBUG)
 	@echo "[Proteus Build]: Created Debugging Static Archive  -> $(TARGET_DEBUG_A)"
 
 src/%.debug.o: src/%.c
-	$(CC) $(CFLAGS) -g -O0 -DDEBUG -fvisibility=default $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -g -O0 -DDEBUG -DPT_SUPER_PAGE_BYTES=4194304 -fvisibility=default $(INCLUDES) -c $< -o $@
 
 # ----------------------------------------------------------------------------
 # Submodule Dependency Initialization

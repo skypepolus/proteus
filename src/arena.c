@@ -37,6 +37,9 @@ void pt_arena_child_fork(void) {
 }
 
 static void pt_arena_init_routine(void) {
+	// Dynamically query the host kernel for its native virtual memory page size
+    long os_page_size = sysconf(_SC_PAGESIZE);
+
     /* 1. Detect active hardware CPU core boundaries */
 #if defined(__APPLE__)
     int nm[2] = {CTL_HW, HW_AVAILCPU};
@@ -74,6 +77,15 @@ static void pt_arena_init_routine(void) {
     /* 4. Individual Core Arena Bootstrapping Loop */
     for (long i = 0; i < detected_cores; i++) {
         pt_arena_t* arena = &g_pt_arenas[i];
+
+		if (__builtin_expect(os_page_size <= 0, 0)) {
+			arena->page_size = PT_DEFAULT_PAGE_BYTES;
+		} else {
+			arena->page_size = (size_t)os_page_size;
+		}
+
+		// Compute the bitwise alignment mask (e.g., 4096 - 1 = 4095)
+		arena->page_mask = arena->page_size - 1;
         
         // Construct your asymmetric hybrid-lock primitive
         hybrid_initial(&arena->lock);

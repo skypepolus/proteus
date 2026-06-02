@@ -16,8 +16,14 @@
 // Extended core arena layout - Strictly cache-line isolated to prevent False Sharing
 typedef struct pt_arena {
     struct hybrid lock;
+
     pt_list_t segregate[2]; // Two small segregated lists
     pt_redblack_t* root;    // Augmented address-ordered First-Fit tree root
+
+	// Runtime OS Page Invariants
+    size_t page_size;   // e.g., 4096, 16384, or 65536
+    uintptr_t page_mask; // e.g., 4095, 16383, or 65535
+
 } __attribute__((aligned(64))) pt_arena_t;
 
 typedef struct pt_superpage {
