@@ -269,7 +269,41 @@ void proteus_free(void* ptr) {
 	/* ============================================================================
      * THE UNIFIED DIFFERENTIAL WATERMARK ADVISORY FILTER
      * ============================================================================ */
-    if (coalesced_size >= PT_INDEX_WATERMARK_WORDS + 8) { 
+	if (__builtin_expect(coalesced_size == PT_HUGE_THRESHOLD_WORDS, 0)) {
+        // Only release the superpage if it's not the absolute last one in the tree
+        if (arena->root->left || arena->root->right) { 
+            // 1. Unlink from the tree first so it becomes invisible to the allocator
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, coalesced_size));
+            void* superpage_base = (void*)superpage;
+            
+            if (arena->empty_superpage_cache) { 
+                // Cache is full. Drop lock and DESTROY the page. (No madvise needed)
+                hybrid_unlock(&arena->lock); 
+                munmap(superpage_base, PT_SUPER_PAGE_BYTES);
+            } else {
+                // Cache is empty. Drop lock FIRST to perform the heavy system call
+                hybrid_unlock(&arena->lock); 
+
+                #if defined(__linux__)
+                    madvise(superpage_base, PT_SUPER_PAGE_BYTES, MADV_DONTNEED);
+                #else
+                    madvise(superpage_base, PT_SUPER_PAGE_BYTES, MADV_FREE);
+                #endif
+
+                // Re-acquire lock to safely publish the purged page
+                hybrid_lock(&arena->lock, FREE_SPIN_COUNTER);
+                if (arena->empty_superpage_cache == NULL) {
+                    arena->empty_superpage_cache = superpage_base;
+                    hybrid_unlock(&arena->lock);
+                } else {
+                    // Another thread filled the cache while we were unlocked! Destroy ours.
+                    hybrid_unlock(&arena->lock);
+                    munmap(superpage_base, PT_SUPER_PAGE_BYTES);
+                }
+            }
+            return;
+        }
+	} else if (coalesced_size >= PT_INDEX_WATERMARK_WORDS + 8) { 
         pt_redblack_t* node = pt_idx_hdr_to_tree(final_hdr, coalesced_size);
         word_t* final_ftr   = final_hdr + coalesced_size - 1;
         
@@ -319,25 +353,7 @@ void proteus_free(void* ptr) {
                 node->hdr[0] = (final_ftr + 1) - (word_t*)page_start;
             }
         }
-    }
 
-    if (__builtin_expect(coalesced_size == PT_HUGE_THRESHOLD_WORDS, 0)) {
-       	if((arena->root->left)||(arena->root->right)) { 
-			// 1. Unlink from the tree first so it becomes invisible to the allocator
-			pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, coalesced_size));
-			void* superpage_base = (void*)superpage;
-			if((arena->empty_superpage_cache)) { 
-				// 2. Drop the lock BEFORE the system call
-				hybrid_unlock(&arena->lock); 
-
-				// 3. Unmap safely in parallel
-				munmap(superpage_base, PT_SUPER_PAGE_BYTES);
-			} else {
-				arena->empty_superpage_cache = superpage_base; 
-				hybrid_unlock(&arena->lock); 
-			}
-			return;
-       	}
     }
 
     hybrid_unlock(&arena->lock);
