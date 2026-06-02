@@ -373,8 +373,10 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
         } else {
             active_payload_words = current_size - 2;
         }
-        
-        word_t words_to_copy = (active_payload_words < target_size) ? active_payload_words : target_size;
+
+		// >>> CRITICAL FIX 3: Ensure we do not overflow the TARGET block's payload capacity! <<<
+        word_t target_payload_words = target_size - 2;
+        word_t words_to_copy = (active_payload_words < target_payload_words) ? active_payload_words : target_payload_words;
 
         memcpy(new_payload, ptr, PT_WORDS_TO_BYTES(words_to_copy));
 
@@ -401,7 +403,8 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
         return ptr; 
     }
 
-    pt_arena_t* arena = pt_arena_get_local();
+	pt_arena_t* arena = pt_arena_get_local();
+
     hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER);
 
     word_t* right_hdr = hdr_ptr + current_size;
