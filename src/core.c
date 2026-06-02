@@ -194,17 +194,24 @@ void* proteus_malloc(size_t size_bytes) {
             return payload;
         }
 
-		/* --- Inside proteus_malloc's Slow-Path Page Allocation Gate --- */
-		hybrid_unlock(&home_arena->lock); // Drop lock so others can use the arena
+		pt_superpage_t* new_page;
 
-		pt_superpage_t* new_page = pt_arena_superpage_new(); // Expensive OS call
+		if((home_arena->empty_superpage_cache)) {
+			new_page = home_arena->empty_superpage_cache;
+			home_arena->empty_superpage_cache = NULL;
+		} else {  
+			/* --- Inside proteus_malloc's Slow-Path Page Allocation Gate --- */
+			hybrid_unlock(&home_arena->lock); // Drop lock so others can use the arena
 
-		hybrid_lock(&home_arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
+			new_page = pt_arena_superpage_new(); // Expensive OS call
+
+			hybrid_lock(&home_arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
         
-        if (__builtin_expect(new_page == NULL, 0)) {
-            hybrid_unlock(&home_arena->lock);
-            return NULL;
-        }
+			if (__builtin_expect(new_page == NULL, 0)) {
+				hybrid_unlock(&home_arena->lock);
+				return NULL;
+			}
+		}
         
         new_page->arena_ptr = home_arena;
         new_page->ftr[0]    = 0; // Low Zero Sentinel
@@ -253,12 +260,16 @@ void proteus_free(void* ptr) {
 			// 1. Unlink from the tree first so it becomes invisible to the allocator
 			pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, coalesced_size));
 			void* superpage_base = (void*)superpage;
-        
-			// 2. Drop the lock BEFORE the system call
-			hybrid_unlock(&arena->lock); 
-        
-			// 3. Unmap safely in parallel
-			munmap(superpage_base, PT_SUPER_PAGE_BYTES);
+			if((arena->empty_superpage_cache)) { 
+				// 2. Drop the lock BEFORE the system call
+				hybrid_unlock(&arena->lock); 
+
+				// 3. Unmap safely in parallel
+				munmap(superpage_base, PT_SUPER_PAGE_BYTES);
+			} else {
+				arena->empty_superpage_cache = superpage_base; 
+				hybrid_unlock(&arena->lock); 
+			}
 			return;
        	}
     }
@@ -285,17 +296,34 @@ void proteus_free(void* ptr) {
             uintptr_t page_end   = payload_end & ~arena->page_mask;
             
             if (page_start < page_end) {
-                atomic_fetch_add_explicit(&arena->lock.wait, 1, memory_order_relaxed);
-			#if defined(__linux__)
-				// Instantly drops RSS, preventing Kubernetes OOM terminations
-				madvise((void*)page_start, page_end - page_start, MADV_DONTNEED);
-			#else
-				// Darwin/BSD handles MADV_FREE aggressively enough for safe use
-				madvise((void*)page_start, page_end - page_start, MADV_FREE);
-			#endif
-                atomic_fetch_sub_explicit(&arena->lock.wait, 1, memory_order_relaxed);
-                
-                // Set the new vector: Exact words from the new page_start to the absolute end
+				// 1. UNLINK: Remove from the tree so it can't be allocated
+                pt_idx_tree_unlink(arena, node);
+
+                // 2. INVERT TAGS: Disguise as an allocated block so neighbors don't coalesce and double-unlink
+                final_hdr[0] = -coalesced_size;
+                final_ftr[0] = -coalesced_size;
+
+                // 3. DROP LOCK: Allow parallel allocations
+                hybrid_unlock(&arena->lock);
+
+                // 4. SYSCALL: Safe, unlocked page table purge
+                #if defined(__linux__)
+                    madvise((void*)page_start, page_end - page_start, MADV_DONTNEED);
+                #else
+                    madvise((void*)page_start, page_end - page_start, MADV_FREE);
+                #endif
+
+                // 5. RE-ACQUIRE LOCK
+                hybrid_lock(&arena->lock, FREE_SPIN_COUNTER);
+
+                // 6. RE-COALESCE & RE-INSERT
+                // Because we inverted the tags to negative, we satisfy the state machine's 
+                // precondition. It will safely check if neighbors freed themselves while 
+                // we were unlocked, format the final positive tags, and insert it.
+                final_hdr = pt_idx_coalesce_state_machine(arena, final_hdr, final_ftr, &coalesced_size);
+
+                // 7. Re-anchor the geometric vector tracking
+                node = pt_idx_hdr_to_tree(final_hdr, coalesced_size);
                 node->hdr[0] = (final_ftr + 1) - (word_t*)page_start;
             }
         }

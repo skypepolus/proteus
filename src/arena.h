@@ -24,6 +24,7 @@ typedef struct pt_arena {
     size_t page_size;   // e.g., 4096, 16384, or 65536
     uintptr_t page_mask; // e.g., 4095, 16383, or 65535
 
+	void* empty_superpage_cache; 
 } __attribute__((aligned(64))) pt_arena_t;
 
 typedef struct pt_superpage {

@@ -101,6 +101,8 @@ static void pt_arena_init_routine(void) {
         
         // Tree begins completely clear
         arena->root = NULL;
+
+		arena->empty_superpage_cache = NULL; 
     }
 
 
