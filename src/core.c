@@ -413,8 +413,8 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
         word_t delta = total_combined_size - target_size;
         unsigned state = (delta >= 2) + (delta >= 4) + (delta >= 6) + (delta >= 8);
 
-        if (state == 4) {
-            // >>> CRITICAL FIX: True Stationary Tree Split. Do NOT unlink from the tree! <<<
+        if (state == 4 && right_tag >= 8) {
+            // >>> CRITICAL FIX: True Stationary Tree Split. Old block MUST have been in the tree! <<<
             word_t* remainder_hdr = hdr_ptr + target_size;
             remainder_hdr[0] = delta;
 
@@ -426,16 +426,29 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
             hdr_ptr[0] = -target_size;
             hdr_ptr[target_size - 1] = -target_size;
         } else {
-            // Absorb full neighbor chunk: Safely unlink it from current tracking tier
+            // Safely unlink the old neighbor block from whatever tracking tier it was in
             if (right_tag == 4 || right_tag == 6) {
                 pt_idx_list_unlink(arena, right_hdr, right_tag);
             } else if (right_tag >= 8) {
                 pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(right_hdr, right_tag));
             }
 
-            // Slack remains inside the block
-            hdr_ptr[0] = -total_combined_size;
-            hdr_ptr[total_combined_size - 1] = -total_combined_size;
+            // Route the remainder to the correct structural tier
+            if (state == 4) {
+                word_t* remainder_hdr = hdr_ptr + target_size;
+                hdr_ptr[0] = -target_size;
+                hdr_ptr[target_size - 1] = -target_size;
+                pt_idx_tree_insert(arena, remainder_hdr, delta);
+            } else if (state == 2 || state == 3) {
+                word_t* remainder_hdr = hdr_ptr + target_size;
+                hdr_ptr[0] = -target_size;
+                hdr_ptr[target_size - 1] = -target_size;
+                pt_idx_list_insert(arena, remainder_hdr, delta);
+            } else {
+                // Slack remains inside the block
+                hdr_ptr[0] = -total_combined_size;
+                hdr_ptr[total_combined_size - 1] = -total_combined_size;
+            }
         }
 
         hybrid_unlock(&arena->lock);

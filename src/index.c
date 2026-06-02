@@ -1,4 +1,5 @@
 #include "index.h"
+#include <string.h>
 
 /* ============================================================================
  * SEGREGATED LIST MUTATORS
@@ -147,7 +148,9 @@ static inline void pt_idx_tree_migrate_rightward(pt_arena_t* arena, pt_redblack_
     pt_redblack_t* new_node = pt_idx_hdr_to_tree(final_hdr, final_size);
     
     // 1. Shallow Copy structural descriptors instantly
-    *new_node = *old_node;
+	// >>> CRITICAL FIX: Prevent undefined behavior on overlapping struct memory <<<
+    memmove(new_node, old_node, sizeof(pt_redblack_t));
+
     new_node->ftr[0] = final_size; // Inject new unified size tag
     
     // 2. Patch Parent's child reference
