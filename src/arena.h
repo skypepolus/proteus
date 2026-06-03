@@ -1,6 +1,11 @@
 #ifndef PT_ARENA_H
 #define PT_ARENA_H
 
+// MUST be defined at the absolute top before any standard library includes
+#if !defined(__APPLE__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #include "primitives.h"
 #include <hybrid_lock.h>
 #include <pthread.h>
