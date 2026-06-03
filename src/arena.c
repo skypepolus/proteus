@@ -23,20 +23,13 @@ void pt_arena_prepare_fork(void) {
     }
 }
 
-void pt_arena_parent_fork(void) {
-    // Release all arena locks in the parent process to resume normal operations
+static inline void pt_util_unlock_all_arenas(void) {
     for (long i = 0; i < g_pt_num_cores; i++) {
         hybrid_unlock(&g_pt_arenas[i].lock);
     }
 }
-
-void pt_arena_child_fork(void) {
-    // Release all arena locks in the child process. 
-    // This resets the synchronization state for the new single-threaded environment.
-    for (long i = 0; i < g_pt_num_cores; i++) {
-        hybrid_unlock(&g_pt_arenas[i].lock);
-    }
-}
+void pt_arena_parent_fork(void) { pt_util_unlock_all_arenas(); }
+void pt_arena_child_fork(void)  { pt_util_unlock_all_arenas(); }
 
 static void pt_arena_init_routine(void) {
 	// Dynamically query the host kernel for its native virtual memory page size

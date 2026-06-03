@@ -58,24 +58,12 @@ static inline word_t* pt_idx_tree_to_hdr(pt_redblack_t* node_ptr, word_t size_wo
     return (word_t*)node_ptr - size_words + 8;
 }
 
-// Compute the maximum block size contained anywhere within a given subtree
-static inline word_t pt_idx_tree_subtree_max(pt_redblack_t* node) {
-    if (!node) return 0;
-    word_t max_val = node->ftr[0]; // Start with the node's own size
-    if (node->left_max > max_val)  max_val = node->left_max;
-    if (node->right_max > max_val) max_val = node->right_max;
-    return max_val;
-}
-
 /* ============================================================================
  * CORE PROTOTYPES
  * ============================================================================ */
 
 void* pt_idx_allocate_from_arena(pt_arena_t* arena, word_t size_words);
 pt_redblack_t* pt_idx_tree_find_first_fit(pt_redblack_t* root, word_t size_words);
-
-#define PT_RB_RED   0
-#define PT_RB_BLACK 1
 
 // Helper to calculate the maximum block size available within a given subtree footprint
 static inline word_t pt_node_total_max(pt_redblack_t* n) {

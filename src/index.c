@@ -44,7 +44,7 @@ void pt_idx_list_unlink(pt_arena_t* arena, word_t* hdr_ptr, word_t size_words) {
 pt_redblack_t* pt_idx_tree_find_first_fit(pt_redblack_t* root, word_t size_words) {
     // Early Exit: If the root's total subtree maximum is smaller than what we need,
     // we know with 100% mathematical certainty that no block in this tree fits.
-    if (!root || pt_idx_tree_subtree_max(root) < size_words) {
+    if (!root || pt_node_total_max(root) < size_words) {
         return NULL;
     }
 
@@ -85,23 +85,6 @@ pt_redblack_t* pt_idx_tree_find_first_fit(pt_redblack_t* root, word_t size_words
     return NULL;
 }
 
-void pt_idx_tree_update_augmentation(pt_redblack_t* node) {
-    while (node != NULL) {
-		word_t old_left = node->left_max;
-        word_t old_right = node->right_max;
-        
-        node->left_max  = pt_idx_tree_subtree_max(node->left);
-        node->right_max = pt_idx_tree_subtree_max(node->right);
-        
-        // If neither child's capacity changed, the parent's capacity cannot change.
-        if (old_left == node->left_max && old_right == node->right_max) {
-            break;
-        }
-        
-        node = node->parent; // Ascend up to the root
-    }
-}
-
 void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_words) {
     word_t f_words = node->ftr[0];
     word_t* old_hdr = pt_idx_tree_to_hdr(node, f_words);
@@ -120,7 +103,7 @@ void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_
         node->ftr[0] = delta; // Update the size tag inside the trailing edge
         
         // Directly recompute the max_sub_size augmentations up to the root
-        pt_idx_tree_update_augmentation(node);
+        pt_node_propagate_aug(node);
         return (void*)(old_hdr + 1);
     }
     
@@ -195,7 +178,7 @@ static inline void pt_idx_tree_migrate_rightward(pt_arena_t* arena, pt_redblack_
     
     // 4. Update memory block headers and ancestral augmentations
     final_hdr[0] = final_size;
-    pt_idx_tree_update_augmentation(new_node);
+    pt_node_propagate_aug(new_node);
 }
 
 // Handles updating a right tree node in-place as it absorbs memory from its left side
@@ -203,7 +186,7 @@ static inline void pt_idx_tree_absorb_stationary_right(pt_redblack_t* right_node
                                                        word_t* final_hdr, word_t final_size) {
     final_hdr[0] = final_size;
     right_node->ftr[0] = final_size;
-    pt_idx_tree_update_augmentation(right_node);
+    pt_node_propagate_aug(right_node);
 }
 
 word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ftr, word_t* out_size_words) {

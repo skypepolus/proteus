@@ -286,11 +286,7 @@ void proteus_free(void* ptr) {
                 // Cache is empty. Drop lock FIRST to perform the heavy system call
                 hybrid_unlock(&arena->lock); 
 
-                #if defined(__linux__)
-                    madvise(superpage_base, PT_SUPER_PAGE_BYTES, MADV_DONTNEED);
-                #else
-                    madvise(superpage_base, PT_SUPER_PAGE_BYTES, MADV_FREE);
-                #endif
+				pt_platform_purge_pages	(superpage_base, PT_SUPER_PAGE_BYTES);
 
                 // Re-acquire lock to safely publish the purged page
                 hybrid_lock(&arena->lock, FREE_SPIN_COUNTER);
@@ -307,7 +303,6 @@ void proteus_free(void* ptr) {
         }
 	} else if (coalesced_size >= PT_INDEX_WATERMARK_WORDS + 8) { 
         pt_redblack_t* node = pt_idx_hdr_to_tree(final_hdr, coalesced_size);
-        word_t* final_ftr   = final_hdr + coalesced_size - 1;
         
         word_t advised_size = node->hdr[0]; 
         
@@ -324,6 +319,8 @@ void proteus_free(void* ptr) {
             uintptr_t page_end   = payload_end & ~arena->page_mask;
             
             if (page_start < page_end) {
+			#if 0
+				word_t* final_ftr   = final_hdr + coalesced_size - 1;
 				// 1. UNLINK: Remove from the tree so it can't be allocated
                 pt_idx_tree_unlink(arena, node);
 
@@ -333,14 +330,14 @@ void proteus_free(void* ptr) {
 
                 // 3. DROP LOCK: Allow parallel allocations
                 hybrid_unlock(&arena->lock);
-
+			#else
+				atomic_fetch_add_explicit(&arena->lock.wait, 1, memory_order_relaxed);
+			#endif
                 // 4. SYSCALL: Safe, unlocked page table purge
-                #if defined(__linux__)
-                    madvise((void*)page_start, page_end - page_start, MADV_DONTNEED);
-                #else
-                    madvise((void*)page_start, page_end - page_start, MADV_FREE);
-                #endif
-
+				pt_platform_purge_pages((void*)page_start, page_end - page_start);
+			#if 1
+				atomic_fetch_sub_explicit(&arena->lock.wait, 1, memory_order_relaxed);
+			#else
                 // 5. RE-ACQUIRE LOCK
                 hybrid_lock(&arena->lock, FREE_SPIN_COUNTER);
 
@@ -353,6 +350,7 @@ void proteus_free(void* ptr) {
                 // 7. Re-anchor the geometric vector tracking
                 node = pt_idx_hdr_to_tree(final_hdr, coalesced_size);
                 node->hdr[0] = (final_ftr + 1) - (word_t*)page_start;
+			#endif
             }
         }
 
@@ -587,7 +585,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
             pt_redblack_t* right_node = pt_idx_hdr_to_tree(right_hdr, right_tag);
             right_node->ftr[0] = delta;
 
-            pt_idx_tree_update_augmentation(right_node);
+            pt_node_propagate_aug(right_node);
 
             hdr_ptr[0] = -target_size;
             hdr_ptr[target_size - 1] = -target_size;

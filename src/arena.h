@@ -108,4 +108,12 @@ static inline pt_superpage_t* pt_arena_superpage(void* ptr) {
     return (pt_superpage_t*)((uintptr_t)ptr & PT_SUPER_PAGE_MASK);
 }
 
+static inline int pt_platform_purge_pages(void* addr, size_t length) {
+#if defined(__linux__)
+    return madvise(addr, length, MADV_DONTNEED);
+#else
+    return madvise(addr, length, MADV_FREE);
+#endif
+}
+
 #endif // PT_ARENA_H
