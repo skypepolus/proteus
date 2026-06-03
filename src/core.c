@@ -319,7 +319,7 @@ void proteus_free(void* ptr) {
             uintptr_t page_end   = payload_end & ~arena->page_mask;
             
             if (page_start < page_end) {
-			#if 0
+			#if 1
 				word_t* final_ftr   = final_hdr + coalesced_size - 1;
 				// 1. UNLINK: Remove from the tree so it can't be allocated
                 pt_idx_tree_unlink(arena, node);
@@ -335,7 +335,7 @@ void proteus_free(void* ptr) {
 			#endif
                 // 4. SYSCALL: Safe, unlocked page table purge
 				pt_platform_purge_pages((void*)page_start, page_end - page_start);
-			#if 1
+			#if 0
 				atomic_fetch_sub_explicit(&arena->lock.wait, 1, memory_order_relaxed);
 			#else
                 // 5. RE-ACQUIRE LOCK

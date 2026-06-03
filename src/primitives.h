@@ -34,7 +34,7 @@ typedef intptr_t word_t;
 #define PT_HUGE_THRESHOLD_WORDS  (PT_SUPER_PAGE_WORDS - 4)
 
 // Watermark threshold for the Unified Differential Filter 
-#define PT_INDEX_WATERMARK_WORDS     ((word_t)((4 * 1024) / sizeof(word_t)))
+#define PT_INDEX_WATERMARK_WORDS     ((word_t)((1024 * 1024) / sizeof(word_t)))
 
 // Default fallback page dimensions if runtime detection isn't stored locally
 #define PT_DEFAULT_PAGE_BYTES        4096
