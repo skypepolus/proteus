@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 Young H. Song
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #ifndef PT_PRIMITIVES_H
 #define PT_PRIMITIVES_H
 
@@ -34,7 +49,7 @@ typedef intptr_t word_t;
 #define PT_HUGE_THRESHOLD_WORDS  (PT_SUPER_PAGE_WORDS - 4)
 
 // Watermark threshold for the Unified Differential Filter 
-#define PT_INDEX_WATERMARK_WORDS     ((word_t)((1024 * 1024) / sizeof(word_t)))
+#define PT_INDEX_WATERMARK_WORDS     (PT_SUPER_PAGE_WORDS / 64)
 
 // Default fallback page dimensions if runtime detection isn't stored locally
 #define PT_DEFAULT_PAGE_BYTES        4096

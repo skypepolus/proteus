@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 Young H. Song
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #include "index.h"
 #include <string.h>
 
@@ -8,33 +23,33 @@
 void pt_idx_list_insert(pt_arena_t* arena, word_t* hdr_ptr, word_t size_words) {
     // 1. Identify target list queue
     int idx = pt_idx_list_select(size_words);
-    pt_link_t* sentinel = &arena->segregate[idx].sentinel;
     
     // 2. Map the structural node onto the trailing edge of the free block
+    pt_link_t* next = &arena->segregate[idx].sentinel;
+	pt_link_t* prev = next->prev;
     pt_link_t* node = pt_idx_hdr_to_link(hdr_ptr, size_words);
     
-    // 3. Complete the link transactions (Prepending to the circular queue)
-    node->next = sentinel->next;
-    node->prev = sentinel;
-    
-    sentinel->next->prev = node;
-    sentinel->next = node;
-    
+    // 3. Complete the link transactions (Appending to the circular queue)
+	node->prev = prev;
+	node->next = next;
+
+	prev->next = node;
+	next->prev = node;
+
     // 4. Stamp the Boundary Tags (Positive values declare the block is FREE)
     *hdr_ptr = size_words;
     node->ftr[0] = size_words; 
 }
 
-void pt_idx_list_unlink(pt_arena_t* arena, word_t* hdr_ptr, word_t size_words) {
-    // Silence unused arena variable if compilers complain (retained for tree alignment later)
-    (void)arena; 
-    
+void pt_idx_list_unlink(word_t* hdr_ptr, word_t size_words) {
     // 1. Map to the trailing edge link node using the known block size
     pt_link_t* node = pt_idx_hdr_to_link(hdr_ptr, size_words);
+	pt_link_t* prev = node->prev;
+	pt_link_t* next = node->next;
     
     // 2. Extract the node from the circular doubly linked list
-    node->prev->next = node->next;
-    node->next->prev = node->prev;
+    prev->next = node->next;
+    next->prev = node->prev;
     
     // 3. Defensive Engineering: Clear out links to kill stray pointers in memory
     node->next = NULL;
@@ -220,7 +235,7 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
             break;
 
         case 0x2: // Left Busy, Right List
-            pt_idx_list_unlink(arena, ftr + 1, right_tag);
+            pt_idx_list_unlink(ftr + 1, right_tag);
             final_size += right_tag;
             break;
 
@@ -235,27 +250,27 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
             break;
 
         case 0x6: // Left Remnant, Right List
-            pt_idx_list_unlink(arena, ftr + 1, right_tag);
+            pt_idx_list_unlink(ftr + 1, right_tag);
             final_hdr   = hdr - left_tag;
             final_size += left_tag + right_tag;
             break;
 
         case 0x8: // Left List, Right Busy
             final_hdr   = hdr - left_tag;
-            pt_idx_list_unlink(arena, final_hdr, left_tag);
+            pt_idx_list_unlink(final_hdr, left_tag);
             final_size += left_tag;
             break;
 
         case 0x9: // Left List, Right Remnant
             final_hdr   = hdr - left_tag;
-            pt_idx_list_unlink(arena, final_hdr, left_tag);
+            pt_idx_list_unlink(final_hdr, left_tag);
             final_size += left_tag + right_tag;
             break;
 
         case 0xA: // Left List, Right List
             final_hdr   = hdr - left_tag;
-            pt_idx_list_unlink(arena, final_hdr, left_tag);
-            pt_idx_list_unlink(arena, ftr + 1, right_tag);
+            pt_idx_list_unlink(final_hdr, left_tag);
+            pt_idx_list_unlink(ftr + 1, right_tag);
             final_size += left_tag + right_tag;
             break;
 
@@ -273,7 +288,7 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
 
         case 0xB: // Left List, Right Tree
             final_hdr = hdr - left_tag;
-            pt_idx_list_unlink(arena, final_hdr, left_tag);
+            pt_idx_list_unlink(final_hdr, left_tag);
             pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_hdr, current_size + left_tag + right_tag);
             *out_size_words = current_size + left_tag + right_tag;
             return final_hdr;
@@ -294,7 +309,7 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
             return final_hdr;
 
         case 0xE: // Left Tree, Right List
-            pt_idx_list_unlink(arena, ftr + 1, right_tag);
+            pt_idx_list_unlink(ftr + 1, right_tag);
             final_hdr  = hdr - left_tag;
             final_size = current_size + left_tag + right_tag;
             pt_idx_tree_migrate_rightward(arena, pt_idx_hdr_to_tree(final_hdr, left_tag), final_hdr, final_size);
