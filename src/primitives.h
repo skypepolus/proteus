@@ -38,7 +38,7 @@ typedef intptr_t word_t;
 #define PT_WORDS_TO_BYTES(words) ((words) * PT_WORD_SIZE_BYTES)
 
 #ifndef PT_SUPER_PAGE_BYTES
-#define PT_SUPER_PAGE_BYTES      ((word_t)1 * 1024 * 1024 * 1024) // 1GiB Default
+#define PT_SUPER_PAGE_BYTES      ((word_t)4 * 1024 * 1024 * 1024) // 4GiB Default
 #endif
 
 // Dynamically derive the mask from the size

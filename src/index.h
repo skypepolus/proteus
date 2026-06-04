@@ -96,6 +96,7 @@ static inline void pt_node_update_aug(pt_redblack_t* n) {
 }
 
 // Bubbles augmentation corrections from a modified node all the way up to the root anchor
+#if 0
 static inline void pt_node_propagate_aug(pt_redblack_t* n) {
     while (n) {
 		word_t old_total = pt_node_total_max(n);
@@ -108,6 +109,36 @@ static inline void pt_node_propagate_aug(pt_redblack_t* n) {
         }
         n = n->parent;
     }
+}
+#else
+static inline void pt_node_propagate_aug(pt_redblack_t* child) {
+	if(child) {
+		pt_redblack_t* parent;
+		word_t max;
+		for(max = pt_node_total_max(child);
+			(parent = child->parent); 
+			child = parent, max = pt_node_total_max(child)) {
+			word_t* child_max = (parent->left == child) ? &parent->left_max : &parent->right_max;
+			if(*child_max == max) {
+				break;
+			}
+			*child_max = max;
+		}
+	}
+}
+#endif
+static inline void pt_node_decrease_aug(pt_redblack_t* node, word_t max) {
+	pt_redblack_t* parent;
+	node->ftr[0] = max;
+	while((parent = node->parent)) {
+		word_t* child_max = (node->left == node) ? &node->left_max : &node->right_max;
+		if(*child_max <= max) {
+			break;
+		}
+		*child_max = max;
+		node = parent;
+		max = pt_node_total_max(node);
+	}
 }
 
 static inline void pt_tree_rotate_left(pt_arena_t* arena, pt_redblack_t* x) {
