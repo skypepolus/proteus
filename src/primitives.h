@@ -38,7 +38,7 @@ typedef intptr_t word_t;
 #define PT_WORDS_TO_BYTES(words) ((words) * PT_WORD_SIZE_BYTES)
 
 #ifndef PT_SUPER_PAGE_BYTES
-#define PT_SUPER_PAGE_BYTES      ((word_t)4 * 1024 * 1024 * 1024) // 4GiB Default
+#define PT_SUPER_PAGE_BYTES      ((word_t)1 * 1024 * 1024 * 1024) // 1GiB Default
 #endif
 
 // Dynamically derive the mask from the size
@@ -48,11 +48,11 @@ typedef intptr_t word_t;
 
 #define PT_HUGE_THRESHOLD_WORDS  (PT_SUPER_PAGE_WORDS - 4)
 
-// Watermark threshold for the Unified Differential Filter 
-#define PT_INDEX_WATERMARK_WORDS     (PT_SUPER_PAGE_WORDS / 64)
-
 // Default fallback page dimensions if runtime detection isn't stored locally
 #define PT_DEFAULT_PAGE_BYTES        4096
+
+// Watermark threshold for the Unified Differential Filter 
+#define PT_INDEX_WATERMARK_WORDS     ((word_t)((PT_DEFAULT_PAGE_BYTES * 2) / sizeof(word_t)))
 
 /* ============================================================================
  * TRAILING-EDGE STRUCTURAL OVERLAYS
