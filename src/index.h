@@ -124,19 +124,6 @@ static inline void pt_node_propagate_aug(pt_redblack_t* child) {
 	}
 }
 #endif
-static inline void pt_node_decrease_aug(pt_redblack_t* node, word_t max) {
-	pt_redblack_t* parent;
-	node->ftr[0] = max;
-	while((parent = node->parent)) {
-		word_t* child_max = (node->left == node) ? &node->left_max : &node->right_max;
-		if(*child_max <= max) {
-			break;
-		}
-		*child_max = max;
-		node = parent;
-		max = pt_node_total_max(node);
-	}
-}
 
 static inline void pt_tree_rotate_left(pt_arena_t* arena, pt_redblack_t* x) {
     pt_redblack_t* y = x->right;
@@ -175,6 +162,6 @@ static inline void pt_tree_rotate_right(pt_arena_t* arena, pt_redblack_t* y) {
 }
 
 void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z);
-void pt_idx_tree_insert(pt_arena_t* arena, word_t* final_hdr, word_t final_size);
+void pt_idx_tree_insert(pt_arena_t* arena, pt_redblack_t* x, word_t* final_hdr, word_t final_size);
 
 #endif // PT_INDEX_H

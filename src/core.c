@@ -248,7 +248,7 @@ static void* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t 
         word_t  huge_size = PT_HUGE_THRESHOLD_WORDS;
         
         huge_hdr[0] = PT_HUGE_THRESHOLD_WORDS;
-        pt_idx_tree_insert(home_arena, huge_hdr, huge_size);
+        pt_idx_tree_insert(home_arena, NULL, huge_hdr, huge_size);
         
         // Loop will iterate exactly once more to safely extract and split from our newly added page
     }
@@ -587,6 +587,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
     word_t* right_hdr = hdr_ptr + current_size;
     word_t  right_tag = *right_hdr;
 
+
     // High-Speed In-Place Rightward Expansion Shortcut
     if (right_tag > 0 && (current_size + right_tag) >= target_size) {
 		word_t total_combined_size = current_size + right_tag;
@@ -622,7 +623,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
 				// >>> CRITICAL FIX: Stamp the free block header before inserting into the tree <<<
                 remainder_hdr[0] = delta;
 
-                pt_idx_tree_insert(arena, remainder_hdr, delta);
+                pt_idx_tree_insert(arena, NULL, remainder_hdr, delta);
             } else if (state == 2 || state == 3) {
                 word_t* remainder_hdr = hdr_ptr + target_size;
                 hdr_ptr[0] = -target_size;
