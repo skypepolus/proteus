@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 Young H. Song
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #include "arena.h"
 #include "core.h"
 #include "index.h"
@@ -12,16 +27,18 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
 	pt_link_t* list_4 = &arena->segregate[0].sentinel;
 	pt_link_t* list_6 = &arena->segregate[1].sentinel;
 
-	switch(size_words / 2 - 1) {
+	switch(size_words >> 1) {
+	case 0:
+		 __builtin_trap();
     /* --------------------------------------------------------------------
      * LANE Z: TARGET IS 2 WORDS (16 BYTES)
      * -------------------------------------------------------------------- */
-	case 0:
+	case 1:
         // Match 1: True Exact Fit (4-word block available)
-        if (list_4->next != list_4) {
+        if (list_4->prev != list_4) {
             pt_link_t* node = list_4->next;
             word_t* hdr_ptr = pt_idx_link_to_hdr(node, 4);
-            pt_idx_list_unlink(arena, hdr_ptr, 4);
+            pt_idx_list_unlink(hdr_ptr, 4);
             
             hdr_ptr[0] = -2;
             hdr_ptr[1] = -2;
@@ -31,10 +48,10 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
         }
         
         // Match 2: Segregated Split Fallback (Carve from a 6-word block)
-        if (list_6->next != list_6) {
+        if (list_6->prev != list_6) {
             pt_link_t* node = list_6->next;
             word_t* hdr_ptr = pt_idx_link_to_hdr(node, 6);
-            pt_idx_list_unlink(arena, hdr_ptr, 6);
+            pt_idx_list_unlink(hdr_ptr, 6);
             
             // Format the 4-word allocated chunk at the front
             hdr_ptr[0] = -2;
@@ -50,12 +67,12 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
     /* --------------------------------------------------------------------
      * LANE A: TARGET IS 4 WORDS (32 BYTES)
      * -------------------------------------------------------------------- */
-	case 1:
+	case 2:
         // Match 1: True Exact Fit (4-word block available)
-        if (list_4->next != list_4) {
+        if (list_4->prev != list_4) {
             pt_link_t* node = list_4->next;
             word_t* hdr_ptr = pt_idx_link_to_hdr(node, 4);
-            pt_idx_list_unlink(arena, hdr_ptr, 4);
+            pt_idx_list_unlink(hdr_ptr, 4);
             
             hdr_ptr[0] = -4;
             hdr_ptr[3] = -4;
@@ -63,10 +80,10 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
         }
         
         // Match 2: Segregated Split Fallback (Carve from a 6-word block)
-        if (list_6->next != list_6) {
+        if (list_6->prev != list_6) {
             pt_link_t* node = list_6->next;
             word_t* hdr_ptr = pt_idx_link_to_hdr(node, 6);
-            pt_idx_list_unlink(arena, hdr_ptr, 6);
+            pt_idx_list_unlink(hdr_ptr, 6);
             
             // Format the 4-word allocated chunk at the front
             hdr_ptr[0] = -4;
@@ -83,12 +100,12 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
     /* --------------------------------------------------------------------
      * LANE B: TARGET IS 6 WORDS (48 BYTES)
      * -------------------------------------------------------------------- */
-	case 2:
+	case 3:
         // Exact Fit Match Only
-        if (list_6->next != list_6) {
+        if (list_6->prev != list_6) {
             pt_link_t* node = list_6->next;
             word_t* hdr_ptr = pt_idx_link_to_hdr(node, 6);
-            pt_idx_list_unlink(arena, hdr_ptr, 6);
+            pt_idx_list_unlink(hdr_ptr, 6);
             
             hdr_ptr[0] = -6;
             hdr_ptr[5] = -6;
@@ -155,9 +172,8 @@ void* proteus_malloc(size_t size_bytes) {
     // ----------------------------------------------------------------------------
     // PASS B: Work-Stealing Neighbor Core Scan
     // ----------------------------------------------------------------------------
-    for (long i = 0; i < g_pt_num_cores; i++) {
-        pt_arena_t* target_arena = &g_pt_arenas[i];
-        if (target_arena == home_arena) continue;
+    for (long i = 1, j = sched_getcpu(); i < g_pt_num_cores; i++) {
+        pt_arena_t* target_arena = &g_pt_arenas[(i + j) % g_pt_num_cores];
         
         if (hybrid_try(&target_arena->lock)) {
             // 1. Attempt to steal from neighbor's segregated lists
@@ -592,7 +608,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes) {
         } else {
             // Safely unlink the old neighbor block from whatever tracking tier it was in
             if (right_tag == 4 || right_tag == 6) {
-                pt_idx_list_unlink(arena, right_hdr, right_tag);
+                pt_idx_list_unlink(right_hdr, right_tag);
             } else if (right_tag >= 8) {
                 pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(right_hdr, right_tag));
             }
@@ -679,4 +695,43 @@ PT_EXPORT void* calloc(size_t nmemb, size_t size) {
     }
     return ptr;
 }
+
+PT_EXPORT void * reallocf(void *ptr, size_t size) {
+	// Standard BSD behavior: reallocf(ptr, 0) completely frees the pointer and returns NULL
+	if (__builtin_expect(0 == size, 0)) {
+        proteus_free(ptr);
+        return NULL;
+    }
+
+    void* new_ptr = proteus_realloc(ptr, size);
+    
+    // If reallocation fails, perform a defensive fallback purge on the original tracking block
+    if (__builtin_expect(NULL == new_ptr, 0)) {
+        proteus_free(ptr);
+    }
+    
+    return new_ptr;
+}
+
+PT_EXPORT void* memalign(size_t alignment, size_t size) {
+	void* ptr;
+    if(__builtin_expect(0 == proteus_posix_memalign(&ptr, alignment, size), 1)) {
+		return ptr;
+	}
+	return NULL;
+}
+
+PT_EXPORT void* aligned_alloc(size_t alignment, size_t size) { 
+	return (alignment % size) ? memalign(alignment, size) : NULL;
+}
+
+PT_EXPORT void* valloc(size_t size) {
+	return memalign(PT_DEFAULT_PAGE_BYTES, size);
+}
+
+PT_EXPORT void* pvalloc(size_t size) {
+	const size_t mask = PT_DEFAULT_PAGE_BYTES - 1;
+	return memalign(PT_DEFAULT_PAGE_BYTES , (size + mask) & mask);
+}
+
 #endif

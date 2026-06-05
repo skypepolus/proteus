@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 Young H. Song
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #ifndef PT_INDEX_H
 #define PT_INDEX_H
 
@@ -30,7 +45,7 @@ static inline word_t* pt_idx_link_to_hdr(pt_link_t* link_ptr, word_t size_words)
  * ============================================================================ */
 
 void pt_idx_list_insert(pt_arena_t* arena, word_t* hdr_ptr, word_t size_words);
-void pt_idx_list_unlink(pt_arena_t* arena, word_t* hdr_ptr, word_t size_words);
+void pt_idx_list_unlink(word_t* hdr_ptr, word_t size_words);
 
 
 // Defined color invariants for our balanced tree
@@ -81,6 +96,7 @@ static inline void pt_node_update_aug(pt_redblack_t* n) {
 }
 
 // Bubbles augmentation corrections from a modified node all the way up to the root anchor
+#if 0
 static inline void pt_node_propagate_aug(pt_redblack_t* n) {
     while (n) {
 		word_t old_total = pt_node_total_max(n);
@@ -93,6 +109,37 @@ static inline void pt_node_propagate_aug(pt_redblack_t* n) {
         }
         n = n->parent;
     }
+}
+#else
+static inline void pt_node_propagate_aug(pt_redblack_t* child) {
+	if(child) {
+		pt_redblack_t* parent;
+		word_t max;
+        pt_node_update_aug(child);
+		for(max = pt_node_total_max(child);
+			(parent = child->parent); 
+			child = parent, max = pt_node_total_max(child)) {
+			word_t* child_max = (parent->left == child) ? &parent->left_max : &parent->right_max;
+			if(*child_max == max) {
+				break;
+			}
+			*child_max = max;
+		}
+	}
+}
+#endif
+static inline void pt_node_decrease_aug(pt_redblack_t* node, word_t max) {
+	pt_redblack_t* parent;
+	node->ftr[0] = max;
+	while((parent = node->parent)) {
+		word_t* child_max = (node->left == node) ? &node->left_max : &node->right_max;
+		if(*child_max <= max) {
+			break;
+		}
+		*child_max = max;
+		node = parent;
+		max = pt_node_total_max(node);
+	}
 }
 
 static inline void pt_tree_rotate_left(pt_arena_t* arena, pt_redblack_t* x) {
