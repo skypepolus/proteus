@@ -117,7 +117,7 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
     return NULL; // List caches are fully depleted for these tiers
 }
 
-static void* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t size_words);
+static pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t size_words);
 
 void* proteus_malloc(size_t size_bytes) {
 
@@ -166,6 +166,12 @@ void* proteus_malloc(size_t size_bytes) {
             hybrid_unlock(&home_arena->lock);
             return payload;
         }
+		else
+		if((found_node = pt_core_allocate_superpage_fallback(home_arena, size_words))) {
+			payload = pt_idx_extract_and_split(home_arena, found_node, size_words);
+			hybrid_unlock(&home_arena->lock);
+			return payload;
+		}
         hybrid_unlock(&home_arena->lock);
     }
     
@@ -189,36 +195,46 @@ void* proteus_malloc(size_t size_bytes) {
                 hybrid_unlock(&target_arena->lock);
                 return payload;
             }
+			else
+			if((found_node = pt_core_allocate_superpage_fallback(target_arena, size_words))) {
+                payload = pt_idx_extract_and_split(target_arena, found_node, size_words);
+                hybrid_unlock(&target_arena->lock);
+                return payload;
+			}
             hybrid_unlock(&target_arena->lock);
         }
     }
+
+    // ----------------------------------------------------------------------------
+    // PASS C: Home Arena Slow-Path
+    // ----------------------------------------------------------------------------
+	hybrid_lock(&home_arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
+	// 1. Check exact-fit segregated lists first
+	payload = pt_core_try_segregated_alloc(home_arena, size_words);
+	if (payload != NULL) {
+		hybrid_unlock(&home_arena->lock);
+		return payload;
+	}
+	// 2. Fallback to tree search
+	pt_redblack_t* found_node = pt_idx_tree_find_first_fit(home_arena->root, size_words);
+	if (found_node != NULL) {
+		payload = pt_idx_extract_and_split(home_arena, found_node, size_words);
+		hybrid_unlock(&home_arena->lock);
+		return payload;
+	}
+	else
+	if((found_node = pt_core_allocate_superpage_fallback(home_arena, size_words))) {
+		payload = pt_idx_extract_and_split(home_arena, found_node, size_words);
+		hybrid_unlock(&home_arena->lock);
+		return payload;
+	}
+	hybrid_unlock(&home_arena->lock);
     
-    // ----------------------------------------------------------------------------
-    // PASS C: Slow-Path Fallback (Spin-to-sleep on home anchor)
-    // ----------------------------------------------------------------------------
-	return pt_core_allocate_superpage_fallback(home_arena, size_words);
+	return NULL;
 }
 
 __attribute__((cold, noinline)) 
-static void* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t size_words) {
-    hybrid_lock(&home_arena->lock, MALLOC_SPIN_COUNTER);
-    
-    while (1) {
-        // 1. Try home segregated list under heavy lock
-        void* payload = pt_core_try_segregated_alloc(home_arena, size_words);
-        if (payload != NULL) {
-            hybrid_unlock(&home_arena->lock);
-            return payload;
-        }
-        
-        // 2. Try home tree under heavy lock
-        pt_redblack_t* found_node = pt_idx_tree_find_first_fit(home_arena->root, size_words);
-        if (found_node != NULL) {
-            payload = pt_idx_extract_and_split(home_arena, found_node, size_words);
-            hybrid_unlock(&home_arena->lock);
-            return payload;
-        }
-
+static pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t size_words) {
         // 3. Fallback to expensive page creation since the arena is completely dry
         pt_superpage_t* new_page = NULL;
 
@@ -234,7 +250,6 @@ static void* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t 
             hybrid_lock(&home_arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
         
             if (__builtin_expect(new_page == NULL, 0)) {
-                hybrid_unlock(&home_arena->lock);
                 return NULL;
             }
         }
@@ -250,8 +265,7 @@ static void* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t 
         huge_hdr[0] = PT_HUGE_THRESHOLD_WORDS;
         pt_idx_tree_insert(home_arena, NULL, huge_hdr, huge_size);
         
-        // Loop will iterate exactly once more to safely extract and split from our newly added page
-    }
+		return pt_idx_tree_find_first_fit(home_arena->root, size_words); 
 }
 
 void proteus_free(void* ptr) {
