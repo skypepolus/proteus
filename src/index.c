@@ -476,7 +476,9 @@ void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z) {
     }
 
     // Force an immediate backward propagation repair from the deletion pivot point
+	pt_node_update_aug(y);
     pt_node_propagate_aug(y);
+	pt_node_update_aug(fixup_parent);
     pt_node_propagate_aug(fixup_parent);
 
     // If a black node was unlinked, execute standard balancing fixups to maintain tree properties

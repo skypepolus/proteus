@@ -113,16 +113,12 @@ static inline void pt_node_propagate_aug(pt_redblack_t* n) {
 #else
 static inline void pt_node_propagate_aug(pt_redblack_t* child) {
 	if(child) {
+		pt_redblack_t sentinel = { .parent = NULL };
 		pt_redblack_t* parent;
-		word_t max;
-        pt_node_update_aug(child);
-		for(max = pt_node_total_max(child);
-			(parent = child->parent); 
-			child = parent, max = pt_node_total_max(child)) {
+		while((parent = child->parent)) {
+			word_t max = pt_node_total_max(child);
 			word_t* child_max = (parent->left == child) ? &parent->left_max : &parent->right_max;
-			if(*child_max == max) {
-				break;
-			}
+			child = (*child_max == max) ? &sentinel : parent;
 			*child_max = max;
 		}
 	}
