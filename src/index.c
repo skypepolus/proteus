@@ -109,7 +109,7 @@ void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_
     word_t* remainder_hdr = old_hdr + r_words;
 	word_t* remainder_ftr = node->ftr;
 
-    switch(delta >> 1) {
+    switch((unsigned)delta >> 1) {
 		default:
 			// Safe: delta >= 8 guarantees the new allocated block ends strictly before the tree node
 			remainder_hdr[0] = delta;
@@ -127,8 +127,6 @@ void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_
 			pt_idx_tree_unlink(arena, node);
  
 			remainder_hdr[0] = delta;
-			remainder_ftr[0] = delta;
-
             pt_idx_list_insert(arena, remainder_hdr, delta);
 
 			break;
@@ -353,6 +351,9 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
             pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_hdr, final_size);
             *out_size_words = final_size;
             return final_hdr;
+
+		default:
+			__builtin_trap(); 
     }
 
     *out_size_words = final_size;
@@ -361,18 +362,20 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
 	/* ============================================================================
      * SWITCH MATRIX 2: RE-INDEXING ROUTING TABLE
      * ============================================================================ */
-    switch (final_size) {
-        case 2:
+    switch ((unsigned)final_size >> 1) {
+		case 0:
+			__builtin_trap(); 
+        case 1:
             // Remnant space (2 words). Completely passive.
 			final_hdr[1] = final_size;
             break;
             
-        case 4:
-        case 6:
+        case 2:
+        case 3:
             pt_idx_list_insert(arena, final_hdr, final_size);
             break;
             
-        case 8:
+        case 4:
         default:
             // Size 8 and all larger tree tiers flow uniformly into our address-ordered index.
             // Historical vector markers (node->hdr[0]) are preserved automatically in-place!
@@ -415,7 +418,6 @@ void pt_idx_list_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 
 		case 0 * 3 + 2: // Left Fit, Right List
 			right_hdr[0] = right_tag;	
-			next_hdr[-1] = right_tag;
             pt_idx_list_insert(arena, right_hdr, right_tag);
 			break;
 
@@ -433,7 +435,6 @@ void pt_idx_list_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 
 		case 2 * 3 + 0: // Left List, Right Fit
 			left_hdr[0] = left_tag;
-			final_hdr[-1] = left_tag;
             pt_idx_list_insert(arena, left_hdr, left_tag);
 			break;
 
@@ -477,12 +478,11 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 		case 0 * 4 + 2: // Left Fit, Right List;
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
 			right_hdr[0] = right_tag;
-			next_hdr[-1] = right_tag;
             pt_idx_list_insert(arena, right_hdr, right_tag);
 			break;
 
 		case 0 * 4 + 3: // Left Fit, Right Tree
-            pt_idx_tree_migrate_rightward(arena, pt_idx_hdr_to_tree(left_hdr, current_size), right_hdr, right_tag);
+            pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_hdr, right_tag);
 			break;
 
 		case 1 * 4 + 0: // Left Remnant, Right Fit
@@ -504,12 +504,11 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 			left_hdr[0] = 2;
 			final_hdr[-1] = 2;
 			right_hdr[0] = right_tag;
-			next_hdr[-1] = right_tag;
             pt_idx_list_insert(arena, right_hdr, right_tag);
 			break;
 
 		case 1 * 4 + 3: // Left Remnant, Right Tree
-            pt_idx_tree_migrate_rightward(arena, pt_idx_hdr_to_tree(left_hdr, current_size), right_hdr, right_tag);
+            pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_hdr, right_tag);
 			left_hdr[0] = 2;
 			final_hdr[-1] = 2;
 			break;
@@ -517,14 +516,12 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 		case 2 * 4 + 0: // Left List, Right Fit
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
 			left_hdr[0] = left_tag;
-			final_hdr[-1] = left_tag;
             pt_idx_list_insert(arena, left_hdr, left_tag);
 			break;
 
 		case 2 * 4 + 1: // Left List, Right Remnant
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
 			left_hdr[0] = left_tag;
-			final_hdr[-1] = left_tag;
             pt_idx_list_insert(arena, left_hdr, left_tag);
 			right_hdr[0] = 2;
 			next_hdr[-1] = 2;
@@ -533,17 +530,14 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 		case 2 * 4 + 2: // Left List, Right List
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
 			left_hdr[0] = left_tag;
-			final_hdr[-1] = left_tag;
             pt_idx_list_insert(arena, left_hdr, left_tag);
 			right_hdr[0] = right_tag;
-			next_hdr[-1] = right_tag;
             pt_idx_list_insert(arena, right_hdr, right_tag);
 			break;
 
 		case 2 * 4 + 3: // Left List, Right Tree
-            pt_idx_tree_migrate_rightward(arena, pt_idx_hdr_to_tree(left_hdr, current_size), right_hdr, right_tag);
+            pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_hdr, right_tag);
 			left_hdr[0] = left_tag;
-			final_hdr[-1] = left_tag;
             pt_idx_list_insert(arena, left_hdr, left_tag);
 			break;
 
@@ -560,17 +554,16 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 		case 3 * 4 + 2: // Left Tree, Right List
             pt_idx_tree_migrate_leftward(arena, pt_idx_hdr_to_tree(left_hdr, current_size), left_hdr, left_tag);
 			right_hdr[0] = right_tag;
-			next_hdr[-1] = right_tag;
             pt_idx_list_insert(arena, right_hdr, right_tag);
 			break;
 
 		case 3 * 4 + 3: // Left Tree, Right Tree
-            pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(right_hdr, right_tag), right_hdr, right_tag);
-			right_hdr[0] = right_tag;
+            pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_hdr, right_tag);
 			left_hdr[0] = left_tag;
             pt_idx_tree_insert(arena, x, left_hdr, left_tag);
 			break;
 		default:
+			__builtin_trap(); 
 			break;
 	}
 

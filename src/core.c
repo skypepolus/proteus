@@ -172,7 +172,7 @@ void* proteus_malloc(size_t size_bytes) {
     // ----------------------------------------------------------------------------
     // PASS B: Work-Stealing Neighbor Core Scan
     // ----------------------------------------------------------------------------
-    for (long i = 1, j = sched_getcpu(); i < g_pt_num_cores; i++) {
+    for (long i = 1, j = home_arena - g_pt_arenas; i < g_pt_num_cores; i++) {
         pt_arena_t* target_arena = &g_pt_arenas[(i + j) % g_pt_num_cores];
         
         if (hybrid_try(&target_arena->lock)) {
