@@ -1,0 +1,3 @@
+[submodule "deps/hybrid-lock"]
+	path = deps/hybrid-lock
+	url = git@github.com:skypepolus/hybrid-lock.git
