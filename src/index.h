@@ -115,6 +115,7 @@ static inline void pt_node_propagate_aug(pt_redblack_t* child) {
 	if(child) {
 		pt_redblack_t* parent;
 		word_t max;
+        pt_node_update_aug(child);
 		for(max = pt_node_total_max(child);
 			(parent = child->parent); 
 			child = parent, max = pt_node_total_max(child)) {
