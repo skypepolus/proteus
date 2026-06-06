@@ -163,5 +163,7 @@ static inline void pt_tree_rotate_right(pt_arena_t* arena, pt_redblack_t* y) {
 
 void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z);
 void pt_idx_tree_insert(pt_arena_t* arena, pt_redblack_t* x, word_t* final_hdr, word_t final_size);
+void pt_idx_list_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t* final_hdr, word_t* right_hdr, word_t* next_hdr);
+
 
 #endif // PT_INDEX_H

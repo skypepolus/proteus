@@ -24,92 +24,47 @@
 
 static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_words) {
 
-	pt_link_t* list_4 = &arena->segregate[0].sentinel;
-	pt_link_t* list_6 = &arena->segregate[1].sentinel;
+	pt_link_t* list;
 
-	switch(size_words >> 1) {
+	switch((unsigned)size_words >> 1) {
 	case 0:
 		 __builtin_trap();
     /* --------------------------------------------------------------------
      * LANE Z: TARGET IS 2 WORDS (16 BYTES)
      * -------------------------------------------------------------------- */
 	case 1:
-        // Match 1: True Exact Fit (4-word block available)
-        if (list_4->prev != list_4) {
-            pt_link_t* node = list_4->next;
-            word_t* hdr_ptr = pt_idx_link_to_hdr(node, 4);
-            pt_idx_list_unlink(hdr_ptr, 4);
-            
-            hdr_ptr[0] = -2;
-            hdr_ptr[1] = -2;
-            hdr_ptr[2] = 2;
-            hdr_ptr[3] = 2;
-            return (void*)(hdr_ptr + 1);
-        }
-        
-        // Match 2: Segregated Split Fallback (Carve from a 6-word block)
-        if (list_6->prev != list_6) {
-            pt_link_t* node = list_6->next;
-            word_t* hdr_ptr = pt_idx_link_to_hdr(node, 6);
-            pt_idx_list_unlink(hdr_ptr, 6);
-            
-            // Format the 4-word allocated chunk at the front
-            hdr_ptr[0] = -2;
-            hdr_ptr[1] = -2;
-            
-            // Format the remaining 2 words as a passive Pure Remnant
-            word_t* remainder_hdr = hdr_ptr + 2;
-			pt_idx_list_insert(arena, remainder_hdr, 4);
-            
-            return (void*)(hdr_ptr + 1);
-        }
-		break;
     /* --------------------------------------------------------------------
      * LANE A: TARGET IS 4 WORDS (32 BYTES)
      * -------------------------------------------------------------------- */
 	case 2:
-        // Match 1: True Exact Fit (4-word block available)
-        if (list_4->prev != list_4) {
-            pt_link_t* node = list_4->next;
+		list = &arena->segregate[0].sentinel;
+        if (list->prev != list) {
+            pt_link_t* node = list->next;
             word_t* hdr_ptr = pt_idx_link_to_hdr(node, 4);
-            pt_idx_list_unlink(hdr_ptr, 4);
-            
-            hdr_ptr[0] = -4;
-            hdr_ptr[3] = -4;
+			pt_idx_list_split_state_machine(arena, hdr_ptr, hdr_ptr, hdr_ptr + size_words, hdr_ptr + 4);
             return (void*)(hdr_ptr + 1);
         }
-        
-        // Match 2: Segregated Split Fallback (Carve from a 6-word block)
-        if (list_6->prev != list_6) {
-            pt_link_t* node = list_6->next;
-            word_t* hdr_ptr = pt_idx_link_to_hdr(node, 6);
-            pt_idx_list_unlink(hdr_ptr, 6);
-            
-            // Format the 4-word allocated chunk at the front
-            hdr_ptr[0] = -4;
-            hdr_ptr[3] = -4;
-            
-            // Format the remaining 2 words as a passive Pure Remnant
-            word_t* remainder_hdr = hdr_ptr + 4;
-            remainder_hdr[0] = 2;
-            remainder_hdr[1] = 2;
-            
-            return (void*)(hdr_ptr + 1);
-        }
-		break;
     /* --------------------------------------------------------------------
      * LANE B: TARGET IS 6 WORDS (48 BYTES)
      * -------------------------------------------------------------------- */
 	case 3:
-        // Exact Fit Match Only
-        if (list_6->prev != list_6) {
-            pt_link_t* node = list_6->next;
+		list = &arena->segregate[1].sentinel;
+        if (list->prev != list) {
+            pt_link_t* node = list->next;
             word_t* hdr_ptr = pt_idx_link_to_hdr(node, 6);
-            pt_idx_list_unlink(hdr_ptr, 6);
-            
-            hdr_ptr[0] = -6;
-            hdr_ptr[5] = -6;
+			pt_idx_list_split_state_machine(arena, hdr_ptr, hdr_ptr, hdr_ptr + size_words, hdr_ptr + 6);
             return (void*)(hdr_ptr + 1);
+        }
+    /* --------------------------------------------------------------------
+     * LANE B: TARGET IS 8 WORDS (64 BYTES)
+     * -------------------------------------------------------------------- */
+	case 4:
+	default:
+		void* payload = NULL;
+        pt_redblack_t* found_node = pt_idx_tree_find_first_fit(arena->root, size_words);
+        if (found_node != NULL) {
+            payload = pt_idx_extract_and_split(arena, found_node, size_words);
+            return payload;
         }
 		break;
     }
@@ -159,14 +114,7 @@ void* proteus_malloc(size_t size_bytes) {
             hybrid_unlock(&home_arena->lock);
             return payload;
         }
-        // 2. Fallback to tree search
-        pt_redblack_t* found_node = pt_idx_tree_find_first_fit(home_arena->root, size_words);
-        if (found_node != NULL) {
-            payload = pt_idx_extract_and_split(home_arena, found_node, size_words);
-            hybrid_unlock(&home_arena->lock);
-            return payload;
-        }
-		else
+        pt_redblack_t* found_node;
 		if((found_node = pt_core_allocate_superpage_fallback(home_arena, size_words))) {
 			payload = pt_idx_extract_and_split(home_arena, found_node, size_words);
 			hybrid_unlock(&home_arena->lock);
@@ -189,13 +137,7 @@ void* proteus_malloc(size_t size_bytes) {
                 return payload;
             }
             // 2. Attempt to steal and carve from neighbor's tree
-            pt_redblack_t* found_node = pt_idx_tree_find_first_fit(target_arena->root, size_words);
-            if (found_node != NULL) {
-                payload = pt_idx_extract_and_split(target_arena, found_node, size_words);
-                hybrid_unlock(&target_arena->lock);
-                return payload;
-            }
-			else
+            pt_redblack_t* found_node;
 			if((found_node = pt_core_allocate_superpage_fallback(target_arena, size_words))) {
                 payload = pt_idx_extract_and_split(target_arena, found_node, size_words);
                 hybrid_unlock(&target_arena->lock);
@@ -216,13 +158,7 @@ void* proteus_malloc(size_t size_bytes) {
 		return payload;
 	}
 	// 2. Fallback to tree search
-	pt_redblack_t* found_node = pt_idx_tree_find_first_fit(home_arena->root, size_words);
-	if (found_node != NULL) {
-		payload = pt_idx_extract_and_split(home_arena, found_node, size_words);
-		hybrid_unlock(&home_arena->lock);
-		return payload;
-	}
-	else
+	pt_redblack_t* found_node;
 	if((found_node = pt_core_allocate_superpage_fallback(home_arena, size_words))) {
 		payload = pt_idx_extract_and_split(home_arena, found_node, size_words);
 		hybrid_unlock(&home_arena->lock);
@@ -235,7 +171,6 @@ void* proteus_malloc(size_t size_bytes) {
 
 __attribute__((cold, noinline)) 
 static pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* home_arena, word_t size_words) {
-        // 3. Fallback to expensive page creation since the arena is completely dry
         pt_superpage_t* new_page = NULL;
 
         if (home_arena->empty_superpage_cache) {
@@ -387,6 +322,12 @@ void proteus_free(void* ptr) {
     }
 
     hybrid_unlock(&arena->lock);
+}
+
+void* proteus_memalign(size_t alignment, size_t size) {
+	(void)alignment;
+	(void)size;
+	return NULL;
 }
 
 int proteus_posix_memalign(void** memptr, size_t alignment, size_t size_bytes) {

@@ -3,7 +3,7 @@
 # ============================================================================
 
 CC       = gcc
-CFLAGS   = -Wall -Wextra -std=c11 -fPIC -D_GNU_SOURCE
+CFLAGS   = -Wall -Wextra -std=c11 -fPIC -D_GNU_SOURCE -Wno-implicit-fallthrough 
 INCLUDES = -Iinclude -Isrc -Ideps/hybrid-lock/include
 
 # Dynamic Shared Object Targets
