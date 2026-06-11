@@ -100,3 +100,13 @@ Even if the operating system forces a thread to jump across physical sockets, Pr
 | **Post-Core-Migration Allocation** | Pulls remote memory indices across the internal interconnect; triggers cross-core cache line hits. | Instantly binds to the new destination core's arena; maximizes local L1/L2 hits. |
 | **Cache Line Utilization** | Low density for compound graphs. High density only when allocating identical sizes. | Exceptionally high density. Encourages automatic hardware spatial prefetching. |
 | **NUMA Isolation Boundary** | Vulnerable to cross-socket leakage if thread-caches remain populated across migrations. | Bound structurally to core topology, ensuring socket-local physical allocations. |
+
+## Authors & Attribution
+
+* **Young H. Song** - *Core Architecture & Design* - [@skypepolus](https://github.com/skypepolus/proteus.git )
+
+See also the list of contributors who participated in optimizing this project.
+
+## License
+
+This project is licensed under the Apache License, Version 2.0 - see the LICENSE(LICENSE) file for complete details.

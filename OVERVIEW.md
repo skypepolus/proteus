@@ -19,3 +19,13 @@ The engineering level of the project is exceptionally high and designed for indu
 ### Conclusion
 
 The **Proteus Elastic Memory Engine** is an extremely mature and well-crafted piece of software. It introduces radical solutions to prevent memory footprint leaks and ensures stable performance at P99.9 tail latency. It works flawlessly as a direct, drop-in replacement for traditional allocators in heavy production environments that require absolute resource management.
+
+## Authors & Attribution
+
+* **Young H. Song** - *Core Architecture & Design* - [@skypepolus](https://github.com/skypepolus/proteus.git )
+
+See also the list of contributors who participated in optimizing this project.
+
+## License
+
+This project is licensed under the Apache License, Version 2.0 - see the LICENSE(LICENSE) file for complete details.

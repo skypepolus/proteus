@@ -23,11 +23,6 @@
 /* ============================================================================
  * CORE PROTOTYPES
  * ============================================================================ */
-void* pt_idx_allocate_from_arena(pt_arena_t* arena, word_t size_words);
-pt_redblack_t* pt_idx_tree_find_first_fit(pt_redblack_t* root, word_t size_words);
-
-// ---> ADD THESE FIVE MISSING SIGNATURES <---
-void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_words);
-word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ftr, word_t* out_size_words);
+pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words);
 
 #endif // PT_CORE_H

@@ -30,19 +30,22 @@ proteus/
 ├── ALGORITHM.md            # Theoretical foundations, proofs, and academic citations
 ├── deps/
 │   └── hybrid-lock/        # Git Submodule: Cache-isolated atomic spin-semaphore
-│       ├── include/
-│       │   └── hybrid_lock.h
-│       └── Makefile
+│       └─── include/
+│           └── hybrid_lock.h
 ├── include/
 │   └── proteus.h           # Public API drop-in header
-└── src/
-    ├── arena.c             # Environment bootstrapping & CPU core-affinity routing
-    ├── arena.h             # 4GB Superpage structural alignment primitives
-    ├── core.h              # Adaptive spin-lock thresholds 
-    ├── core.c              # Core entry points (malloc, free, realloc, memalign)
-    ├── index.c             # Augmented trees & branchless coalescing switch matrix
-    ├── index.h             # Topological conversion macros & search steps
-    └── primitives.h        # Word-scaling metrics & structural overlay models
+├─── src/
+│    ├── arena.c             # Environment bootstrapping & CPU core-affinity routing
+│    ├── arena.h             # 4GB Superpage structural alignment primitives
+│    ├── core.h              # Adaptive spin-lock thresholds 
+│    ├── core.c              # Core entry points (malloc, free, realloc, memalign)
+│    ├── index.c             # Augmented trees & branchless coalescing switch matrix
+│    ├── index.h             # Topological conversion macros & search steps
+│    └── primitives.h        # Word-scaling metrics & structural overlay models
+├─── posix-mt/               # POSIX multi-threaded porting
+├─── posix-st/               # POSIX single-threaded porting
+├─── wasm32-none-unknown-st  # WASM32 single-threaded porting
+├─── freertos                # FreeRTOS porting
 └── tests/
     └── test_stress.c       # Concurrent multi-threaded adversarial stress suite
 ```

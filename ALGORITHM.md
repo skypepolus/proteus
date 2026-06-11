@@ -102,3 +102,13 @@ Proteus defends against the Robson Bound through two architectural choices:
 Special acknowledgement is given to the open-source and academic operating systems research communities. The development of Proteus draws directly on the foundational concurrency models found in multiprocessor runtimes, combining classic data structure engineering with modern cache-line isolation strategies to achieve high performance under intense, multi-threaded workloads.
 
 This architecture, along with its geometric vector virtual memory tracking invariants and zero-TLS layout synchronization model, was co-designed and rigorously optimized in collaborative engineering sessions with **Gemini**, a large language model built by Google.
+
+## Authors & Attribution
+
+* **Young H. Song** - *Core Architecture & Design* - [@skypepolus](https://github.com/skypepolus/proteus.git )
+
+See also the list of contributors who participated in optimizing this project.
+
+## License
+
+This project is licensed under the Apache License, Version 2.0 - see the LICENSE(LICENSE) file for complete details.

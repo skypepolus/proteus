@@ -16,6 +16,7 @@
 #ifndef PT_PRIMITIVES_H
 #define PT_PRIMITIVES_H
 
+#include "platform.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -37,22 +38,20 @@ typedef intptr_t word_t;
 
 #define PT_WORDS_TO_BYTES(words) ((words) * PT_WORD_SIZE_BYTES)
 
-#ifndef PT_SUPER_PAGE_BYTES
-#define PT_SUPER_PAGE_BYTES      ((word_t)4 * 1024 * 1024 * 1024) // 4GiB Default
-#endif
-
 // Dynamically derive the mask from the size
-#define PT_SUPER_PAGE_MASK  (~((uintptr_t)PT_SUPER_PAGE_BYTES - 1))
+#define PT_SUPER_PAGE_MASK  ((uintptr_t)PT_SUPER_PAGE_BYTES - 1)
 
 #define PT_SUPER_PAGE_WORDS      (PT_SUPER_PAGE_BYTES / PT_WORD_SIZE_BYTES)
 
 #define PT_HUGE_THRESHOLD_WORDS  (PT_SUPER_PAGE_WORDS - 4)
 
-// Default fallback page dimensions if runtime detection isn't stored locally
-#define PT_DEFAULT_PAGE_BYTES        4096
+#define PT_INDEX_WATERMARK_MASK		(PT_INDEX_WATERMARK_BYTES - 1)
 
 // Watermark threshold for the Unified Differential Filter 
-#define PT_INDEX_WATERMARK_WORDS     ((word_t)((PT_DEFAULT_PAGE_BYTES * 2) / sizeof(word_t)))
+#define PT_INDEX_WATERMARK_WORDS     ((word_t)((PT_INDEX_WATERMARK_BYTES) / sizeof(word_t)))
+
+// Default fallback page dimensions if runtime detection isn't stored locally
+#define PT_DEFAULT_PAGE_BYTES        4096
 
 /* ============================================================================
  * TRAILING-EDGE STRUCTURAL OVERLAYS
@@ -70,8 +69,13 @@ typedef struct pt_link {
 } pt_link_t;
 
 typedef struct pt_list {
-    pt_link_t sentinel;
-} pt_list_t;
+    pt_link_t head;
+    pt_link_t tail;
+} 
+#ifndef PT_SINGLE_THREAD
+__attribute__((aligned(64)))
+#endif
+pt_list_t;
 
 typedef struct pt_redblack {
     word_t hdr[1];              // Localized per-node differential watermark vector tracker
