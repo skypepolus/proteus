@@ -89,37 +89,40 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
 
         /* --- BLOCK B: Stationary Right-Tree Shortcuts (Immediate Returns) --- */
         case 0x3: // Left Busy, Right Tree
+			final_size += right_tag;
+            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_size);
 			final_hdr[0] = final_size;
-            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), current_size + right_tag);
-            *out_size_words = current_size + right_tag;
+            *out_size_words = final_size;
             return final_hdr;
 
         case 0x7: // Left Remnant, Right Tree
             final_hdr = hdr - left_tag;
+			final_size += left_tag + right_tag;
+            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_size);
 			final_hdr[0] = final_size;
-            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), current_size + left_tag + right_tag);
-            *out_size_words = current_size + left_tag + right_tag;
+            *out_size_words = final_size;
             return final_hdr;
 
         case 0xB: // Left List, Right Tree
             final_hdr = hdr - left_tag;
             pt_idx_list_unlink(final_hdr, left_tag);
+			final_size += left_tag + right_tag;
+            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_size);
 			final_hdr[0] = final_size;
-            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), current_size + left_tag + right_tag);
-            *out_size_words = current_size + left_tag + right_tag;
+            *out_size_words = final_size;
             return final_hdr;
 
         /* --- BLOCK C: Left-Tree Rightward Migrations (Immediate Returns) --- */
         case 0xC: // Left Tree, Right Busy
             final_hdr  = hdr - left_tag;
-            final_size = current_size + left_tag;
+            final_size += left_tag;
             pt_idx_tree_migrate_rightward(arena, pt_idx_hdr_to_tree(final_hdr, left_tag), final_hdr, final_size);
             *out_size_words = final_size;
             return final_hdr;
 
         case 0xD: // Left Tree, Right Remnant
             final_hdr  = hdr - left_tag;
-            final_size = current_size + left_tag + right_tag;
+            final_size += left_tag + right_tag;
             pt_idx_tree_migrate_rightward(arena, pt_idx_hdr_to_tree(final_hdr, left_tag), final_hdr, final_size);
             *out_size_words = final_size;
             return final_hdr;
@@ -127,7 +130,7 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
         case 0xE: // Left Tree, Right List
             pt_idx_list_unlink(ftr + 1, right_tag);
             final_hdr  = hdr - left_tag;
-            final_size = current_size + left_tag + right_tag;
+            final_size += left_tag + right_tag;
             pt_idx_tree_migrate_rightward(arena, pt_idx_hdr_to_tree(final_hdr, left_tag), final_hdr, final_size);
             *out_size_words = final_size;
             return final_hdr;
@@ -137,9 +140,9 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
             // Keep right stationary, completely unlink left node to prevent duplicates
             final_hdr = hdr - left_tag;
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, left_tag));
-            final_size = current_size + left_tag + right_tag;
-			final_hdr[0] = final_size;
+            final_size += left_tag + right_tag;
             pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_size);
+			final_hdr[0] = final_size;
             *out_size_words = final_size;
             return final_hdr;
 
@@ -148,7 +151,6 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
     }
 
     *out_size_words = final_size;
-    final_hdr[0] = final_size;
 
 	/* ============================================================================
      * SWITCH MATRIX 2: RE-INDEXING ROUTING TABLE
@@ -173,6 +175,7 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
             pt_idx_tree_insert(arena, arena->root, final_hdr, final_size);
             break;
     }
+    final_hdr[0] = final_size;
 
     return final_hdr;
 }
@@ -191,21 +194,18 @@ void pt_idx_list_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
     // 2. Pack neighbors into a 4-bit key (16 possible execution values)
     unsigned neighbor_state = left_state * 3 + right_state;
 
-	pt_idx_list_unlink(left_hdr, current_size);
-
-	word_t final_size = right_hdr - final_hdr;
-	final_hdr[0] = -final_size;
-	right_hdr[-1] = -final_size;
     /* ============================================================================
      * SWITCH MATRIX 1: UNLINKING AND STRUCTURAL SHORTCUTS
      * ============================================================================ */
+	pt_idx_list_unlink(left_hdr, current_size);
+
 	switch (neighbor_state) {
 		case 0 * 3 + 0: // Exact Fit
 			break;
 
 		case 0 * 3 + 1: // Left Fit, Right Remnant
-			right_hdr[0] = 2; 
 			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2; 
 			break;
 
 		case 0 * 3 + 2: // Left Fit, Right List
@@ -218,10 +218,10 @@ void pt_idx_list_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 			break;
 
 		case 1 * 3 + 1: // Left Remanat, Right Remnant
-			left_hdr[0] = 2;
 			final_hdr[-1] = 2;
-			right_hdr[0] = 2; 
+			left_hdr[0] = 2;
 			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2; 
 			break;
 
 		case 2 * 3 + 0: // Left List, Right Fit
@@ -234,7 +234,11 @@ void pt_idx_list_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 		default: // Impossible
 			__builtin_trap(); 
 			break;
-	}
+	}	
+
+	word_t final_size = right_hdr - final_hdr;
+	right_hdr[-1] = -final_size;
+	final_hdr[0] = -final_size;
 }
 
 void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t* final_hdr, word_t* right_hdr, word_t* bdry_hdr) 
@@ -262,8 +266,8 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 
 		case 0 * 4 + 1: // Left Fit, Right Remnant
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
-			right_hdr[0] = 2;
 			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2;
 			break;
 
 		case 0 * 4 + 2: // Left Fit, Right List;
@@ -272,36 +276,36 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 			break;
 
 		case 0 * 4 + 3: // Left Fit, Right Tree
-			right_hdr[0] = right_tag;
             pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_tag);
+			right_hdr[0] = right_tag;
 			break;
 
 		case 1 * 4 + 0: // Left Remnant, Right Fit
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
-			left_hdr[0] = 2;
 			final_hdr[-1] = 2;
+			left_hdr[0] = 2;
 			break;
 
 		case 1 * 4 + 1: // Left Remnant, Right Remnant
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
-			left_hdr[0] = 2;
 			final_hdr[-1] = 2;
-			right_hdr[0] = 2;
+			left_hdr[0] = 2;
 			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2;
 			break;
 
 		case 1 * 4 + 2: // Left Remnant, Right List
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
-			left_hdr[0] = 2;
 			final_hdr[-1] = 2;
+			left_hdr[0] = 2;
             pt_idx_list_insert(arena, right_hdr, right_tag);
 			break;
 
 		case 1 * 4 + 3: // Left Remnant, Right Tree
-			right_hdr[0] = right_tag;
             pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_tag);
-			left_hdr[0] = 2;
+			right_hdr[0] = right_tag;
 			final_hdr[-1] = 2;
+			left_hdr[0] = 2;
 			break;
 
 		case 2 * 4 + 0: // Left List, Right Fit
@@ -312,8 +316,8 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 		case 2 * 4 + 1: // Left List, Right Remnant
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
             pt_idx_list_insert(arena, left_hdr, left_tag);
-			right_hdr[0] = 2;
 			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2;
 			break;
 
 		case 2 * 4 + 2: // Left List, Right List
@@ -323,8 +327,8 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 			break;
 
 		case 2 * 4 + 3: // Left List, Right Tree
-			right_hdr[0] = right_tag;
             pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_tag);
+			right_hdr[0] = right_tag;
             pt_idx_list_insert(arena, left_hdr, left_tag);
 			break;
 
@@ -334,8 +338,8 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 
 		case 3 * 4 + 1: // Left Tree, Right Remnant
             pt_idx_tree_migrate_leftward(arena, pt_idx_hdr_to_tree(left_hdr, current_size), left_hdr, left_tag);
-			right_hdr[0] = 2;
 			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2;
 			break;
 
 		case 3 * 4 + 2: // Left Tree, Right List
@@ -344,10 +348,10 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 			break;
 
 		case 3 * 4 + 3: // Left Tree, Right Tree
-			right_hdr[0] = right_tag;
             pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_tag);
-			left_hdr[0] = left_tag;
+			right_hdr[0] = right_tag;
             pt_idx_tree_insert(arena, x, left_hdr, left_tag);
+			left_hdr[0] = left_tag;
 			break;
 		default:
 			__builtin_trap(); 
@@ -355,8 +359,8 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 	}
 
 	word_t final_size = right_hdr - final_hdr;
-	final_hdr[0] = -final_size;
 	right_hdr[-1] = -final_size;
+	final_hdr[0] = -final_size;
 }
 
 void pt_idx_tree_insert(pt_arena_t* arena, pt_redblack_t* x, word_t* final_hdr, word_t final_size) 
@@ -450,20 +454,21 @@ void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z)
     pt_redblack_t* x = NULL;
     pt_redblack_t* fixup_parent = NULL;
     unsigned y_original_color = y->color;
-	word_t* fixup_max;
 
     if (z->left == NULL) {
         x = z->right;
-        fixup_parent = z->parent;
-		fixup_max = fixup_parent->left == z ? &fixup_parent->left_max : &fixup_parent->right_max;
+        if((fixup_parent = z->parent)) {
+			word_t* fixup_max = fixup_parent->left == z ? &fixup_parent->left_max : &fixup_parent->right_max;
+			*fixup_max = z->right_max;
+		}
         pt_tree_node_pointer_swap(arena, z, z->right); // remove z 
-		*fixup_max = z->right_max;
     } else if (z->right == NULL) {
         x = z->left;
-        fixup_parent = z->parent;
-		fixup_max = fixup_parent->left == z ? &fixup_parent->left_max : &fixup_parent->right_max;
+        if((fixup_parent = z->parent)) {
+			word_t* fixup_max = fixup_parent->left == z ? &fixup_parent->left_max : &fixup_parent->right_max;
+			*fixup_max = z->left_max;
+		}
         pt_tree_node_pointer_swap(arena, z, z->left); // remove z 
-		*fixup_max = z->left_max;
     } else {
         // Node has two children: Locate its absolute successor
         y = z->right;
@@ -476,10 +481,11 @@ void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z)
             if (x) x->parent = y;
             fixup_parent = y;
         } else {
-            fixup_parent = y->parent;
-			fixup_max = fixup_parent->left == y ? &fixup_parent->left_max : &fixup_parent->right_max;
+            if((fixup_parent = y->parent)) { 
+				word_t* fixup_max = fixup_parent->left == y ? &fixup_parent->left_max : &fixup_parent->right_max;
+				*fixup_max = y->right_max;
+			}
             pt_tree_node_pointer_swap(arena, y, y->right); // remove y
-			*fixup_max = y->right_max;
             y->right = z->right;
 			y->right_max = z->right_max;
             y->right->parent = y;

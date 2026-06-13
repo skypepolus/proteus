@@ -14,7 +14,6 @@
 extern "C" {
 #endif
 
-void* proteus_malloc(size_t size_bytes);
 void  proteus_free(void* ptr);
 void* proteus_realloc(void* ptr, size_t size_bytes);
 void* proteus_memalign(size_t alignment, size_t size_bytes);

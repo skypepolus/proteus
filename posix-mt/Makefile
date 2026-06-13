@@ -3,7 +3,7 @@
 # ============================================================================
 
 CC       = gcc
-CFLAGS   = -Wall -Wextra -std=c11 -fPIC -D_GNU_SOURCE -Wno-implicit-fallthrough 
+CFLAGS   = -Wall -Wextra -std=c11 -fPIC -D_GNU_SOURCE -Wno-implicit-fallthrough -pthread
 INCLUDES = -I. -I../include -I../src -I../deps/hybrid-lock/include
 
 # Dynamic Shared Object Targets
@@ -15,7 +15,7 @@ TARGET_BENCH_A  = libproteus-mt.a
 TARGET_DEBUG_A  = libproteus-mt-debug.a
 
 # Source Enumerations
-SRCS = ../src/core.c ../src/index.c ../src/posix.c
+SRCS = ../src/core.c ../src/index.c ../src/watermark.c ../src/posix.c
 PRTS = arena.c platform.c
 OBJS_BENCH = $(SRCS:../src/%.c=src/%.bench.o) $(PRTS:%.c=%.bench.o)
 OBJS_DEBUG = $(SRCS:../src/%.c=src/%.debug.o) $(PRTS:%.c=%.debug.o)

@@ -15,7 +15,7 @@ TARGET_BENCH_A  = libproteus-st.a
 TARGET_DEBUG_A  = libproteus-st-debug.a
 
 # Source Enumerations
-SRCS = ../src/core.c ../src/index.c ../src/posix.c
+SRCS = ../src/core.c ../src/index.c ../src/watermark.c ../src/posix.c
 PRTS = arena.c platform.c
 OBJS_BENCH = $(SRCS:../src/%.c=src/%.bench.o) $(PRTS:%.c=%.bench.o)
 OBJS_DEBUG = $(SRCS:../src/%.c=src/%.debug.o) $(PRTS:%.c=%.debug.o) debug.debug.o
@@ -58,10 +58,10 @@ $(TARGET_DEBUG_A): $(OBJS_DEBUG)
 	@echo "[Proteus Build]: Created Debugging Static Archive  -> $(TARGET_DEBUG_A)"
 
 src/%.debug.o: ../src/%.c
-	$(CC) $(CFLAGS) -g -O0 -DDEBUG -DPT_SUPER_PAGE_BYTES=4194304 $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -g -O0 -DDEBUG $(INCLUDES) -c $< -o $@
 
 %.debug.o: %.c
-	$(CC) $(CFLAGS) -g -O0 -DDEBUG -DPT_SUPER_PAGE_BYTES=4194304 $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -g -O0 -DDEBUG $(INCLUDES) -c $< -o $@
 
 # ----------------------------------------------------------------------------
 # Clean Build Environment

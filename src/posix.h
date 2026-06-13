@@ -13,11 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef __platform_h__
-#define __platform_h__ __platform_h__
+#ifndef __posix_h__
+#define __posix_h__ __posix_h__
 
-#ifndef PT_SUPER_PAGE_BYTES
-#define PT_SUPER_PAGE_BYTES      ((word_t)2 * 1024 * 1024 * 1024) // 4 GiB Default
+#include "arena.h"
+#include <sys/mman.h>
+#include <stddef.h>
+
+void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words, word_t coalesced_size);
+
+static inline int pt_platform_purge_pages(void* addr, size_t length) {
+#if defined(__linux__)
+    return madvise(addr, length, MADV_DONTNEED);
+#else
+    return madvise(addr, length, MADV_FREE);
 #endif
+}
 
-#endif/*__platform_h__*/
+#endif/*__posix_h__*/

@@ -30,23 +30,23 @@ typedef struct pt_arena {
     uintptr_t page_mask; // e.g., 4095, 16383, or 65535
 
 	void* empty_superpage_cache; 
+
 	uint8_t reserved_align[64 - sizeof(pt_redblack_t*) - sizeof(size_t) - sizeof(uintptr_t) - sizeof(void*)];
 } pt_arena_t;
 
 typedef struct pt_superpage {
-    pt_arena_t* arena_ptr;                        // 1 Word
-    word_t      reserved_align;                   // 1 Word (Maintained for strict 2-word header structural alignment)
     word_t ftr[1];                                // 1 Word (Low Zero Sentinel)
     word_t block_words[PT_HUGE_THRESHOLD_WORDS];  // PT_SUPER_PAGE_WORDS - 4 Words
     word_t hdr[1];                                // 1 Word (High Zero Sentinel)
+    pt_arena_t* arena_ptr;                        // 1 Word
+    word_t      reserved_align;                   // 1 Word (Maintained for strict 2-word header structural alignment)
 } pt_superpage_t;
 
 typedef struct g_pt {
 	// Standard atomic int for core counting
 	_Atomic int num_cores;
-	pt_arena_t* arenas;
-	pthread_once_t once_control;
-	uint8_t reserved_align[64 - sizeof(_Atomic int) - sizeof(pt_arena_t*) - sizeof(pthread_once_t)];
+	_Atomic (pt_arena_t*) arenas;
+	uint8_t reserved_align[64 - sizeof(_Atomic int) - sizeof(pt_arena_t*)];
 } g_pt_t;
 
 #include "watermark.h"

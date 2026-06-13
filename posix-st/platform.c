@@ -10,27 +10,29 @@ pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t siz
 	word_t* addr;
 	word_t tail_words;
 	word_t* tail_hdr;
+	pt_redblack_t* node;
 	if(0 < superpage->hdr[-1]) {
 		tail_words = superpage->hdr[-1];
 		tail_hdr = superpage->hdr - tail_words;
 		addr = (word_t*)(((uintptr_t)(tail_hdr + 1) + increment + PT_INDEX_WATERMARK_MASK) & ~(uintptr_t)PT_INDEX_WATERMARK_MASK);
 		if(brk(addr)) __builtin_trap();
 		superpage->hdr = --addr;
-		superpage->hdr[0] = 0;
-		switch((unsigned)tail_words << 1) {
+		word_t delta = superpage->hdr - tail_hdr - tail_words;
+		switch((unsigned)tail_words >> 1) {
 		default:
 		case 4: // Tree
-			pt_redblack_t* node = pt_idx_hdr_to_tree(tail_hdr, tail_words);
-			tail_words = superpage->hdr - tail_hdr;
-			pt_idx_tree_migrate_rightward(arena, node, tail_hdr, tail_words);
+			node = pt_idx_hdr_to_tree(tail_hdr, tail_words);
+			node = pt_idx_tree_migrate_rightward(arena, node, tail_hdr, tail_words + delta);
+			node->hdr[0] = delta; // watermark update
 			break;
 		case 3: // List
 		case 2: // List
 			pt_idx_list_unlink(tail_hdr, tail_words);
 		case 1: // Remnant
-			tail_words = superpage->hdr - tail_hdr;
-			tail_hdr[0] = tail_words;
-			pt_idx_tree_insert(arena, arena->root, tail_hdr, tail_words);
+			pt_idx_tree_insert(arena, arena->root, tail_hdr, tail_words + delta);
+			tail_hdr[0] = tail_words + delta;
+			node = pt_idx_hdr_to_tree(tail_hdr, tail_words + delta);
+			node->hdr[0] = delta; // watermark update
 			break;
 		case 0:
 			__builtin_trap();
@@ -40,11 +42,12 @@ pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t siz
 		addr = (word_t*)(((uintptr_t)(tail_hdr + 1) + increment + PT_INDEX_WATERMARK_MASK) & ~(uintptr_t)PT_INDEX_WATERMARK_MASK);
 		if(brk(addr)) __builtin_trap();
 		superpage->hdr = --addr;
-		superpage->hdr[0] = 0;
 		tail_words = superpage->hdr - tail_hdr;
 		tail_hdr[0] = tail_words;
 		pt_idx_tree_insert(arena, arena->root, tail_hdr, tail_words);
+		node = pt_idx_hdr_to_tree(tail_hdr, tail_words);
+		node->hdr[0] = tail_words; // watermark initialization	
 	}
-
-	return pt_idx_tree_find_first_fit(arena->root, size_words); 
+	superpage->hdr[0] = 0;
+	return node; 
 }

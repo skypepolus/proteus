@@ -67,30 +67,28 @@ make init-deps
 ### 2. Compile the Static Library
 To build the production-ready library (`libproteus.a`) with aggressive compiler loop unrolling and macro inlining optimizations (`-O3`):
 ```bash
-make
+make -C posix-st
+make -C posix-mt
 ```
 
 ### 3. Compiling and Executing the Stress Test
 To evaluate the allocator under heavy multi-threaded contention, cross-thread freeing cycles, and size mutations, move the stress verification file into the `tests/` directory and compile with the verification suite:
 
-#### Running with ThreadSanitizer (Detect Work-Stealing Races)
+#### Running with AddressSanitizer & ThreadSanitizer (Detect Work-Stealing Races)
 ```bash
-gcc -g -O0 -fsanitize=thread \
-    src/core.c src/arena.c src/index.c tests/test_stress.c \
-    -Iinclude -Isrc -Ideps/hybrid-lock/include \
-    -lpthread -o proteus_stress
+make -C posix-st/tests run_stress
 
-./proteus_stress
-```
+# For Linux Single-thread
+/usr/bin/time -v env LD_PRELOAD=posix-st/libproteus-st.so posix-st/tests/test_stress_bench
 
-#### Running with Address & UndefinedBehavior Sanitizers (Verify Pointer Math)
-```bash
-gcc -g -O0 -fsanitize=address,undefined \
-    src/core.c src/arena.c src/index.c tests/test_stress.c \
-    -Iinclude -Isrc -Ideps/hybrid-lock/include \
-    -lpthread -o proteus_stress
+make -C posix-mt/tests run_stress
 
-./proteus_stress
+# For Linux Multi-thread
+/usr/bin/time -v env LD_PRELOAD=posix-mt/libproteus-mt.so posix-st/tests/test_stress_bench
+
+# For macOS
+DYLD_INSERT_LIBRARIES=posix-mt/libproteus-mt.so posix-st/tests/test_stress_bench
+
 ```
 
 ### 4. Cleaning Build Artifacts

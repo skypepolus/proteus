@@ -18,8 +18,10 @@
 
 extern g_pt_t g_pt;
 
+#define PT_INDEX_WATERMARK_BYTES	(64 * 1024)
+
 #define pt_arena_watermark_no(coalesced_size) __builtin_expect((coalesced_size) < PT_INDEX_WATERMARK_WORDS + 8, 1) 
 
-void* pt_arena_watermark_release(pt_arena_t* arena, pt_superpage_t* superapge, word_t* final_hdr, word_t coalesced_size);
+void* pt_arena_watermark_release(pt_arena_t* arena, pt_superpage_t* superapge, word_t* final_hdr, word_t size_words, word_t coalesced_size);
 
 #endif // PT_WATERMARK_H

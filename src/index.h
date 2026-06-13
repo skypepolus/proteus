@@ -23,6 +23,11 @@
  * SEGREGATED LIST ROUTING & TRAILING-EDGE TRANSLATION
  * ============================================================================ */
 
+static inline word_t* pt_idx_ftr_to_hdr(word_t* ftr)
+{
+	return ftr + 1 - *ftr;
+}
+
 // Maps a given word size to its corresponding segregated list index
 static inline int pt_idx_list_select(word_t size_words) 
 {
@@ -238,6 +243,8 @@ static inline pt_redblack_t* pt_idx_tree_find_first_fit(pt_redblack_t* current, 
 
 // Handles updating a right tree node in-place as it absorbs memory from its left side
 static inline void pt_idx_tree_absorb_stationary_right(pt_redblack_t* right_node, word_t final_size) {
+	word_t advised_size = right_node->hdr[0]; // watermark
+	right_node->hdr[0] = advised_size < final_size ? advised_size : final_size;
     right_node->ftr[0] = final_size;
     pt_node_propagate_aug(right_node);
 }
@@ -275,6 +282,7 @@ static inline pt_redblack_t* pt_idx_tree_migrate_rightward(pt_arena_t* arena, pt
 	// >>> CRITICAL FIX: Prevent undefined behavior on overlapping struct memory <<<
 	intptr_t* new_hdr = new_node->hdr;
 	intptr_t* old_hdr = old_node->hdr;
+	word_t advised_size = old_hdr[0];
 	new_hdr[7] = old_hdr[7];
 	new_hdr[6] = old_hdr[6];
 	new_hdr[5] = old_hdr[5];
@@ -282,7 +290,7 @@ static inline pt_redblack_t* pt_idx_tree_migrate_rightward(pt_arena_t* arena, pt
 	new_hdr[3] = old_hdr[3];
 	new_hdr[2] = old_hdr[2];
 	new_hdr[1] = old_hdr[1];
-	new_hdr[0] = old_hdr[0];
+	new_hdr[0] = advised_size < final_size ? advised_size : final_size; // watermark
 
 	return pt_idx_tree_migrate(arena, old_node, final_hdr, final_size, new_node);
 }
@@ -296,7 +304,8 @@ static inline pt_redblack_t* pt_idx_tree_migrate_leftward(pt_arena_t* arena, pt_
 	// >>> CRITICAL FIX: Prevent undefined behavior on overlapping struct memory <<<
 	intptr_t* new_hdr = new_node->hdr;
 	intptr_t* old_hdr = old_node->hdr;
-	new_hdr[0] = old_hdr[0];
+	word_t advised_size = old_hdr[0];
+	new_hdr[0] = advised_size < final_size ? advised_size : final_size; // watermark
 	new_hdr[1] = old_hdr[1];
 	new_hdr[2] = old_hdr[2];
 	new_hdr[3] = old_hdr[3];

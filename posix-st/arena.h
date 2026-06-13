@@ -20,8 +20,6 @@
 #include "arena-st.h"
 #include <unistd.h>
 
-#define pt_arena_watermark_yes(superpage, ftr_ptr) __builtin_expect(ftr_ptr + 1 == superpage->hdr, 0)
-
 static inline pt_arena_t* pt_arena_get_local(void) 
 {
     if (__builtin_expect(g_pt.num_cores == 0, 0)) {

@@ -23,9 +23,7 @@
 #define PT_SINGLE_THREAD PT_SINGLE_THREAD
 
 #ifndef PT_SUPER_PAGE_BYTES
-#define PT_SUPER_PAGE_BYTES      ((word_t)INTPTR_MAX / sizeof(word_t))
+#define PT_SUPER_PAGE_BYTES      ((word_t)(INTPTR_MAX) / sizeof(word_t))
 #endif
-
-#define PT_INDEX_WATERMARK_BYTES	(64 * 1024)
 
 #endif/*__platform_h__*/

@@ -22,8 +22,6 @@
 #include <pthread.h>
 #include <sys/mman.h>
 
-#define pt_arena_watermark_yes(superpage, ftr_ptr) (1)
-
 void pt_arena_init_routine(void);
 
 static inline pt_arena_t* pt_arena_get_local(void) 
@@ -34,7 +32,7 @@ static inline pt_arena_t* pt_arena_get_local(void)
     
     if (__builtin_expect(cores == 0, 0)) {
         // Slow path: Only hit once in the entire application lifetime
-		pthread_once(&g_pt.once_control, pt_arena_init_routine);
+		pt_arena_init_routine();
         cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire);
     }
 
@@ -50,14 +48,15 @@ static inline pt_arena_t* pt_arena_get_local(void)
     return &g_pt.arenas[routing_id % cores];
 }
 
-static inline pt_superpage_t* pt_arena_superpage_new(void) 
+static inline void pt_arena_superpage_new(pt_superpage_t* new_page[2]) 
 {
     size_t allocation_canvas = 2 * (size_t)PT_SUPER_PAGE_BYTES;
     
     // Allocate double the required size to guarantee a 4GB boundary exists inside
     void* raw_ptr = mmap(NULL, allocation_canvas, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (__builtin_expect(raw_ptr == MAP_FAILED, 0)) {
-        return NULL;
+		new_page[0] = NULL;
+		new_page[1] = NULL;
     }
 
     uintptr_t raw_addr = (uintptr_t)raw_ptr;
@@ -68,27 +67,23 @@ static inline pt_superpage_t* pt_arena_superpage_new(void)
     
     // Calculate the sizes of our excess prefix and suffix fragments
     size_t prefix_trim = aligned_addr - raw_addr;
-    size_t suffix_trim = allocation_canvas - prefix_trim - (size_t)PT_SUPER_PAGE_BYTES;
 
     // Release the unaligned prefix back to the kernel
     if (prefix_trim > 0) {
         munmap(raw_ptr, prefix_trim);
-    }
-    
-    // Release the unaligned suffix back to the kernel
-    if (suffix_trim > 0) {
-        munmap((void*)(aligned_addr + (size_t)PT_SUPER_PAGE_BYTES), suffix_trim);
-    }
 
-    return (pt_superpage_t*)aligned_addr;
+		// Release the unaligned suffix back to the kernel
+		size_t suffix_trim = allocation_canvas - prefix_trim - (size_t)PT_SUPER_PAGE_BYTES;
+		if (suffix_trim > 0) {
+			munmap((void*)(aligned_addr + (size_t)PT_SUPER_PAGE_BYTES), suffix_trim);
+		}
+		new_page[0] = (void*)aligned_addr;
+		new_page[1] = NULL;
+    } else {
+		new_page[0] = raw_ptr;
+		new_page[1] = (pt_superpage_t*)(raw_addr + PT_SUPER_PAGE_BYTES);
+	}
 }
 
-static inline int pt_platform_purge_pages(void* addr, size_t length) {
-#if defined(__linux__)
-    return madvise(addr, length, MADV_DONTNEED);
-#else
-    return madvise(addr, length, MADV_FREE);
-#endif
-}
 
 #endif // PT_ARENA_H

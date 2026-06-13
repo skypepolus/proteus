@@ -42,7 +42,6 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
         if (head->next != tail) {
             pt_link_t* node = head->next;
             word_t* hdr_ptr = pt_idx_link_to_hdr(node, 4);
-			pt_idx_list_split_state_machine(arena, hdr_ptr, hdr_ptr, hdr_ptr + size_words, hdr_ptr + 4);
             return (void*)(hdr_ptr + 1);
         }
 	case 3:
@@ -51,10 +50,9 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
      * -------------------------------------------------------------------- */
 		head = &arena->segregate[1].head;
 		tail = &arena->segregate[1].tail;
-        if (head->prev != tail) {
+        if (head->next != tail) {
             pt_link_t* node = head->next;
             word_t* hdr_ptr = pt_idx_link_to_hdr(node, 6);
-			pt_idx_list_split_state_machine(arena, hdr_ptr, hdr_ptr, hdr_ptr + size_words, hdr_ptr + 6);
             return (void*)(hdr_ptr + 1);
         }
 	case 4:
@@ -64,84 +62,12 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
 	default:
         pt_redblack_t* found_node = pt_idx_tree_find_first_fit(arena->root, size_words);
         if (found_node != NULL) {
-			word_t f_words = found_node->ftr[0];
-			word_t* hdr_ptr = pt_idx_tree_to_hdr(found_node, f_words);
-			pt_idx_tree_split_state_machine(arena, hdr_ptr, hdr_ptr, hdr_ptr + size_words, hdr_ptr + f_words);
-            return (void*)(hdr_ptr + 1);
+            return (void*)(pt_idx_ftr_to_hdr(found_node->ftr) + 1);
         }
 		break;
     }
 
     return NULL; // List caches are fully depleted for these tiers
-}
-
-void* proteus_malloc(size_t size_bytes) {
-
-    word_t size_words = PT_TOTAL_BLOCK_WORDS(size_bytes);
-   	#ifndef PT_SINGLE_THREAD 
-    /* ============================================================================
-     * LANE 1: DIRECT-MMAP BYPASS (HUGE TIER)
-     * ============================================================================ */
-    if (size_words > PT_HUGE_THRESHOLD_WORDS) {
-        size_t metadata_headroom = 3 * sizeof(word_t);
-        size_t total_mmap_bytes  = size_bytes + metadata_headroom;
-
-        word_t* mmap_base = (word_t*)mmap(
-            NULL, total_mmap_bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0
-        );
-        if (__builtin_expect(mmap_base == MAP_FAILED, 0)) return NULL;
-
-        word_t* hdr_ptr = mmap_base + 2;
-        hdr_ptr[0]  = -size_words; 
-        hdr_ptr[-1] = (word_t)total_mmap_bytes;
-        hdr_ptr[-2] = (word_t)mmap_base;
-
-        return (void*)(hdr_ptr + 1);
-    }
-	#endif/*PT_SINGLE_THREAD*/
-    /* ============================================================================
-     * LANE 2: ARENA-MANAGED TIER (WITH FAST SEGREGATED LIST MATCHING)
-     * ============================================================================ */
-    pt_arena_t* arena = pt_arena_get_local();
-    void* payload = NULL;
-
-	// ----------------------------------------------------------------------------
-	// PASS A: Home Arena Fast-Path
-	// ----------------------------------------------------------------------------
-	if(__builtin_expect(!hybrid_try(&arena->lock), 0)) {
-		// ----------------------------------------------------------------------------
-		// PASS B: Work-Stealing Neighbor Core Scan
-		// ----------------------------------------------------------------------------
-		int i, j, num_cores;
-		for (i = 1, j = arena - g_pt.arenas, num_cores = g_pt.num_cores; i < num_cores; i++) {
-			arena = &g_pt.arenas[(i + j) % num_cores];
-			if (hybrid_try(&arena->lock)) {
-				break;
-			}
-		}
-		if(__builtin_expect(num_cores <= i, 0)) {
-			arena = &g_pt.arenas[(i + j) % num_cores];
-			hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
-		}
-	}
-
-	// 1. Check exact-fit segregated lists first
-	payload = pt_core_try_segregated_alloc(arena, size_words);
-	if (payload != NULL) {
-		hybrid_unlock(&arena->lock);
-		return payload;
-	}
-	pt_redblack_t* found_node;
-	if((found_node = pt_core_allocate_superpage_fallback(arena, size_words))) {
-		word_t f_words = found_node->ftr[0];
-		word_t* hdr_ptr = pt_idx_tree_to_hdr(found_node, f_words);
-		pt_idx_tree_split_state_machine(arena, hdr_ptr, hdr_ptr, hdr_ptr + size_words, hdr_ptr + f_words);
-		hybrid_unlock(&arena->lock);
-		return (void*)(hdr_ptr + 1);
-	}
-
-	hybrid_unlock(&arena->lock);
-	return NULL;
 }
 
 void proteus_free(void* ptr) 
@@ -177,8 +103,8 @@ void proteus_free(void* ptr)
 	if (pt_arena_watermark_no(coalesced_size)) { 
 		hybrid_unlock(&arena->lock);
 		return;
-	} else if (pt_arena_watermark_yes(superpage, ftr_ptr)) { 
-		void* superpage_base = pt_arena_watermark_release(arena, superpage, final_hdr, coalesced_size);
+	} else { 
+		void* superpage_base = pt_arena_watermark_release(arena, superpage, final_hdr, size_words, coalesced_size);
 		#ifdef PT_SINGLE_THREAD
 		(void)superpage_base;
 		#else
@@ -194,15 +120,14 @@ void proteus_free(void* ptr)
 
 void* proteus_memalign(size_t alignment, size_t size_bytes) 
 {
+	uintptr_t aligned_payload;
     /* ============================================================================
      * LANE 1: STANDARD MALLOC ROUTING (ALIGNMENT <= 16 BYTES)
      * ============================================================================ */
     // Because Proteus natively aligns all blocks to 16-byte boundaries (2 words),
     // standard small alignments are already guaranteed to be met.
 
-	if(sizeof(word_t) * 2 >= alignment) {
-		return proteus_malloc(size_bytes);
-	}
+	alignment = alignment < sizeof(word_t) * 2 ? 0 : alignment;
 
 	/* ============================================================================
      * LANE 2: ARENA-BASED ALIGNMENT CARVING (ALIGNMENT > 16 BYTES)
@@ -213,7 +138,7 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 
     pt_arena_t* arena = pt_arena_get_local();
 	#ifndef PT_SINGLE_THREAD
-    if (request_words <= PT_HUGE_THRESHOLD_WORDS) {
+    if (__builtin_expect(request_words <= PT_HUGE_THRESHOLD_WORDS, 1)) {
 	#endif/*PT_SINGLE_THREAD*/
 		// === ENCAPSULATE CRITICAL MUTATION SECTION ===
 		// ----------------------------------------------------------------------------
@@ -223,46 +148,53 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 			// ----------------------------------------------------------------------------
 			// PASS B: Work-Stealing Neighbor Core Scan
 			// ----------------------------------------------------------------------------
-			int i, j, num_cores;
-			for (i = 1, j = arena - g_pt.arenas, num_cores = g_pt.num_cores; i < num_cores; i++) {
-				arena = &g_pt.arenas[(i + j) % num_cores];
+			int i, j, num_cores = g_pt.num_cores;
+			pt_arena_t* arenas = g_pt.arenas;
+			for (i = 1, j = arena - arenas; i < num_cores; i++) {
+				arena = &arenas[(i + j) % num_cores];
 				if (hybrid_try(&arena->lock)) {
 					break;
 				}
 			}
 			if(__builtin_expect(num_cores <= i, 0)) {
-				arena = &g_pt.arenas[(i + j) % num_cores];
+				arena = &arenas[(i + j) % num_cores];
 				hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
 			}
 		}
 
         // 1. Allocate a raw block large enough from the arena
-		void* raw_payload;
 		word_t* left_hdr;
-		pt_redblack_t* found_node;
 
-		if(__builtin_expect(NULL != (raw_payload = pt_core_try_segregated_alloc(arena, request_words)), 1)) {
-			left_hdr = (word_t*)raw_payload + 1;
-		} else if((found_node = pt_core_allocate_superpage_fallback(arena, request_words))) {
-			word_t f_words = found_node->ftr[0];
-			left_hdr = pt_idx_tree_to_hdr(found_node, f_words);
-			raw_payload = (void*)(left_hdr + 1);
+		if(__builtin_expect(0 != (aligned_payload = (uintptr_t)pt_core_try_segregated_alloc(arena, request_words)), 1)) {
+			left_hdr = (word_t*)aligned_payload - 1;
+		} else { 
+			pt_redblack_t* found_node = pt_core_allocate_superpage_fallback(arena, request_words);
+			if(found_node != NULL) {
+				left_hdr = pt_idx_ftr_to_hdr(found_node->ftr);
+				aligned_payload = (uintptr_t)(left_hdr + 1);
+			} else {
+				hybrid_unlock(&arena->lock); 
+				return NULL;
+			}
 		}
 
-        // 2. Find the aligned payload boundary inside the raw payload
-		uintptr_t alignment_mask = alignment - 1;
-        uintptr_t aligned_payload = ((uintptr_t)raw_payload + alignment_mask) & ~alignment_mask;
+		// 2. Find the aligned payload boundary inside the raw payload
+		aligned_payload = 0 == alignment ? aligned_payload : (aligned_payload + alignment - 1) & ~(alignment - 1);
 
         // 3. Calculate structural boundaries
-		word_t f_words = left_hdr[0];
-		word_t* aligned_hdr = (word_t*)aligned_payload - 1;
-		word_t* right_hdr = aligned_hdr + PT_TOTAL_BLOCK_WORDS(size_bytes);
-		word_t* bdry_hdr = left_hdr + f_words;
-
-		if(__builtin_expect(8 > f_words, 0))
-			pt_idx_list_split_state_machine(arena, left_hdr, aligned_hdr, right_hdr, bdry_hdr);
-		else
-			pt_idx_tree_split_state_machine(arena, left_hdr, aligned_hdr, right_hdr, bdry_hdr);
+		if(8 > left_hdr[0]) {
+			pt_idx_list_split_state_machine(arena, 
+				left_hdr, 
+				(word_t*)aligned_payload - 1, 
+				(word_t*)aligned_payload - 1 + PT_TOTAL_BLOCK_WORDS(size_bytes),
+				left_hdr + left_hdr[0]);
+		} else {
+			pt_idx_tree_split_state_machine(arena,
+				left_hdr, 
+				(word_t*)aligned_payload - 1, 
+				(word_t*)aligned_payload - 1 + PT_TOTAL_BLOCK_WORDS(size_bytes),
+				left_hdr + left_hdr[0]);
+		}
 
 		// Safely unlock before passing remnants to free(), preventing deadlocks completely
         hybrid_unlock(&arena->lock); 
@@ -286,8 +218,8 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
     }
 
     // Compute the first perfectly aligned address that leaves enough headroom for your metadata
-    uintptr_t raw_start       = (uintptr_t)mmap_base + metadata_headroom;
-    uintptr_t aligned_payload = (raw_start + (alignment - 1)) & ~(alignment - 1);
+    aligned_payload = (uintptr_t)mmap_base + metadata_headroom;
+	aligned_payload = 0 == alignment ? aligned_payload : (aligned_payload + alignment - 1) & ~(alignment - 1);
 
     // Anchor the 3-word tracking structure immediately behind the aligned payload boundary
     word_t* hdr_ptr = (word_t*)aligned_payload - 1;
@@ -352,7 +284,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 	size_t next_bytes = next_power_of_2(size_bytes);
     // 1. Edge Case Gateways
     if (ptr == NULL) {
-        return proteus_malloc(next_bytes);
+        return proteus_memalign(0, next_bytes);
     }
 
     word_t* hdr_ptr = (word_t*)ptr - 1;
@@ -454,13 +386,13 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 				break;
 			case 1 * 4 + 2: // List to Remanant
 				pt_idx_list_unlink(right_hdr, right_tag);
-				remainder_hdr[0] = delta; 
 				remainder_hdr[delta - 1] = delta; 
+				remainder_hdr[0] = delta; 
 				break;
 			case 1 * 4 + 3: // Tree to Remanant
 				pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(right_hdr, right_tag));
-				remainder_hdr[0] = delta; 
 				remainder_hdr[delta - 1] = delta; 
+				remainder_hdr[0] = delta; 
 				break;
 			case 2 * 4 + 2: // List to List
 				pt_idx_list_unlink(right_hdr, right_tag);
@@ -473,8 +405,8 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 				pt_idx_list_insert(arena, remainder_hdr, delta);
 				break;
 			case 3 * 4 + 3: // Tree to Tree
+				pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(right_hdr, right_tag), delta);
 				remainder_hdr[0] = delta;
-				pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(right_hdr, delta), delta);
 				break;
 			case 0 * 4 + 0: // Zero to Zero
 			case 1 * 4 + 0: // Zero to Remnant
@@ -486,10 +418,9 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 			case 3 * 4 + 2: // List to Tree
 			default: // Impossible
 				 __builtin_trap();
-				break;
 			}
-			hdr_ptr[0] = -target_words;
 			hdr_ptr[target_words - 1] = -target_words;
+			hdr_ptr[0] = -target_words;
 
 			hybrid_unlock(&arena->lock);
 			return ptr;
@@ -509,13 +440,12 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 	case 1 * 4 + 0 * 2 + 1: // target is bigger  & target is not huge & current is huge
 	default: // impossible
 		__builtin_trap();
-		break;
 	}
 	#ifdef PT_SINGLE_THREAD
 	__builtin_trap();
 	#else
     // Hard Managed Fallback: In-place options exhausted, migrate data
-    void* new_payload = proteus_malloc(next_bytes);
+    void* new_payload = proteus_memalign(0, next_bytes);
     if (__builtin_expect(new_payload == NULL, 0)) {
         return NULL;
     }

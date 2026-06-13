@@ -13,10 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include "posix.h"
 #include "platform.h"
-#include "arena.h"
 #include "proteus.h"
-#include <stddef.h>
 #include <string.h>
 #include <errno.h>
 
@@ -25,7 +24,7 @@
  * ============================================================================ */
 
 PT_EXPORT void* malloc(size_t size) {
-    return proteus_malloc(size);
+	return proteus_memalign(0, size);
 }
 
 PT_EXPORT void free(void* ptr) {
@@ -38,7 +37,7 @@ PT_EXPORT void* realloc(void* ptr, size_t size) {
 
 PT_EXPORT void* calloc(size_t nmemb, size_t size) {
     size_t total = nmemb * size;
-    void* ptr = proteus_malloc(total);
+    void* ptr = proteus_memalign(0, total);
     if (ptr) {
         // Zero-fill allocated tracking space
         return memset(ptr, 0, total);
