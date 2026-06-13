@@ -14,195 +14,12 @@
  * limitations under the License.
  */
 #include "index.h"
+#ifdef PT_POSIX 
 #include <string.h>
+#endif
 
-/* ============================================================================
- * SEGREGATED LIST MUTATORS
- * ============================================================================ */
-
-void pt_idx_list_insert(pt_arena_t* arena, word_t* hdr_ptr, word_t size_words) {
-    // 1. Identify target list queue
-    int idx = pt_idx_list_select(size_words);
-    
-    // 2. Map the structural node onto the trailing edge of the free block
-    pt_link_t* next = &arena->segregate[idx].sentinel;
-	pt_link_t* prev = next->prev;
-    pt_link_t* node = pt_idx_hdr_to_link(hdr_ptr, size_words);
-    
-    // 3. Complete the link transactions (Appending to the circular queue)
-	node->prev = prev;
-	node->next = next;
-
-	prev->next = node;
-	next->prev = node;
-
-    // 4. Stamp the Boundary Tags (Positive values declare the block is FREE)
-    *hdr_ptr = size_words;
-    node->ftr[0] = size_words; 
-}
-
-void pt_idx_list_unlink(word_t* hdr_ptr, word_t size_words) {
-    // 1. Map to the trailing edge link node using the known block size
-    pt_link_t* node = pt_idx_hdr_to_link(hdr_ptr, size_words);
-	pt_link_t* prev = node->prev;
-	pt_link_t* next = node->next;
-    
-    // 2. Extract the node from the circular doubly linked list
-    prev->next = node->next;
-    next->prev = node->prev;
-    
-    // 3. Defensive Engineering: Clear out links to kill stray pointers in memory
-    node->next = NULL;
-    node->prev = NULL;
-}
-
-pt_redblack_t* pt_idx_tree_find_first_fit(pt_redblack_t* root, word_t size_words) {
-    // Early Exit: If the root's total subtree maximum is smaller than what we need,
-    // we know with 100% mathematical certainty that no block in this tree fits.
-    if (!root || pt_node_total_max(root) < size_words) {
-        return NULL;
-    }
-
-    pt_redblack_t* current = root;
-
-    while (current != NULL) {
-		// Explicitly prefetch the children into the L1 cache (Read intent, high temporal locality)
-        if (current->left)  __builtin_prefetch(current->left, 0, 3);
-        if (current->right) __builtin_prefetch(current->right, 0, 3);
-
-        // Step 1: Check lowest memory addresses first (Left Subtree).
-        // If a fit exists down here, address-ordering guarantees it's our optimal first-fit.
-        if (current->left && current->left_max >= size_words) {
-            current = current->left;
-            continue;
-        }
-
-        // Step 2: Evaluate the current node.
-        // If the left branch didn't have enough room, check if this specific block fits.
-        if (current->ftr[0] >= size_words) {
-            return current;
-        }
-
-        // Step 3: Fallback to higher addresses (Right Subtree).
-        // We only step here if both the left branch and the current node failed,
-        // but the right subtree max promises a valid block exists deeper.
-        if (current->right && current->right_max >= size_words) {
-            current = current->right;
-            continue;
-        }
-
-        // Step 4: Safety Sentinel.
-        // If our max augmentations are perfectly synchronized, the early exit check
-        // ensures we can never logically land here. If we do, the tree is exhausted.
-        break;
-    }
-
-    return NULL;
-}
-
-void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_words) {
-    word_t f_words = node->ftr[0];
-    word_t* old_hdr = pt_idx_tree_to_hdr(node, f_words);
-    
-    word_t delta = f_words - r_words;
-   
-    word_t* remainder_hdr = old_hdr + r_words;
-	word_t* remainder_ftr = node->ftr;
-
-    switch(delta >> 1) {
-		default:
-			// Safe: delta >= 8 guarantees the new allocated block ends strictly before the tree node
-			remainder_hdr[0] = delta;
-			remainder_ftr[0] = delta; // Update the size tag inside the trailing edge
-        
-			// Directly recompute the max_sub_size augmentations up to the root
-			pt_node_propagate_aug(node);
-
-			break;
-
-        case 3:
-            // Segregated list block (6 words)
-		case 2:
-            // Segregated list block (4 words)
-			pt_idx_tree_unlink(arena, node);
- 
-			remainder_hdr[0] = delta;
-			remainder_ftr[0] = delta;
-
-            pt_idx_list_insert(arena, remainder_hdr, delta);
-
-			break;
-
-		case 1:
-            // Remnant space (2 words). Completely passive.
-			pt_idx_tree_unlink(arena, node);
-
-			remainder_hdr[0] = 2;
-			remainder_ftr[0] = 2;
-
-			break;
-
-        case 0:
-            // Exact fit. Nothing left over.
-			pt_idx_tree_unlink(arena, node);
-
-			break;
-    }
-    // Now it is safe to format the allocated payload block boundaries
-    old_hdr[0] = -r_words;
-    old_hdr[r_words - 1] = -r_words;
-    void* user_payload = (void*)(old_hdr + 1);
-
-	return user_payload;
-}
-
-// Handles shifting a left tree node rightward within the newly unified block boundaries
-static inline void pt_idx_tree_migrate_rightward(pt_arena_t* arena, pt_redblack_t* old_node, 
-                                                 word_t* final_hdr, word_t final_size) {
-    pt_redblack_t* new_node = pt_idx_hdr_to_tree(final_hdr, final_size);
-    
-    // 1. Shallow Copy structural descriptors instantly
-	// >>> CRITICAL FIX: Prevent undefined behavior on overlapping struct memory <<<
-	intptr_t* new_hdr = new_node->hdr;
-	intptr_t* old_hdr = old_node->hdr;
-	new_hdr[7] = old_hdr[7];
-	new_hdr[6] = old_hdr[6];
-	new_hdr[5] = old_hdr[5];
-	new_hdr[4] = old_hdr[4];
-	new_hdr[3] = old_hdr[3];
-	new_hdr[2] = old_hdr[2];
-	new_hdr[1] = old_hdr[1];
-	new_hdr[0] = old_hdr[0];
-
-    new_node->ftr[0] = final_size; // Inject new unified size tag
-    
-    // 2. Patch Parent's child reference
-    if (new_node->parent == NULL) {
-        arena->root = new_node;
-    } else if (new_node->parent->left == old_node) {
-        new_node->parent->left = new_node;
-    } else {
-        new_node->parent->right = new_node;
-    }
-    
-    // 3. Patch Children's parent references
-    if (new_node->left)  new_node->left->parent  = new_node;
-    if (new_node->right) new_node->right->parent = new_node;
-    
-    // 4. Update memory block headers and ancestral augmentations
-    final_hdr[0] = final_size;
-    pt_node_propagate_aug(new_node);
-}
-
-// Handles updating a right tree node in-place as it absorbs memory from its left side
-static inline void pt_idx_tree_absorb_stationary_right(pt_redblack_t* right_node, 
-                                                       word_t* final_hdr, word_t final_size) {
-    final_hdr[0] = final_size;
-    right_node->ftr[0] = final_size;
-    pt_node_propagate_aug(right_node);
-}
-
-word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ftr, word_t* out_size_words) {
+word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ftr, word_t* out_size_words) 
+{
     // 1. Double free defense & direct negation
     if (__builtin_expect(0 <= *hdr, 0)) __builtin_trap(); 
     word_t current_size = -*hdr;
@@ -274,34 +91,40 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
 
         /* --- BLOCK B: Stationary Right-Tree Shortcuts (Immediate Returns) --- */
         case 0x3: // Left Busy, Right Tree
-            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_hdr, current_size + right_tag);
-            *out_size_words = current_size + right_tag;
+			final_size += right_tag;
+            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_size);
+			final_hdr[0] = final_size;
+            *out_size_words = final_size;
             return final_hdr;
 
         case 0x7: // Left Remnant, Right Tree
             final_hdr = hdr - left_tag;
-            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_hdr, current_size + left_tag + right_tag);
-            *out_size_words = current_size + left_tag + right_tag;
+			final_size += left_tag + right_tag;
+            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_size);
+			final_hdr[0] = final_size;
+            *out_size_words = final_size;
             return final_hdr;
 
         case 0xB: // Left List, Right Tree
             final_hdr = hdr - left_tag;
             pt_idx_list_unlink(final_hdr, left_tag);
-            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_hdr, current_size + left_tag + right_tag);
-            *out_size_words = current_size + left_tag + right_tag;
+			final_size += left_tag + right_tag;
+            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_size);
+			final_hdr[0] = final_size;
+            *out_size_words = final_size;
             return final_hdr;
 
         /* --- BLOCK C: Left-Tree Rightward Migrations (Immediate Returns) --- */
         case 0xC: // Left Tree, Right Busy
             final_hdr  = hdr - left_tag;
-            final_size = current_size + left_tag;
+            final_size += left_tag;
             pt_idx_tree_migrate_rightward(arena, pt_idx_hdr_to_tree(final_hdr, left_tag), final_hdr, final_size);
             *out_size_words = final_size;
             return final_hdr;
 
         case 0xD: // Left Tree, Right Remnant
             final_hdr  = hdr - left_tag;
-            final_size = current_size + left_tag + right_tag;
+            final_size += left_tag + right_tag;
             pt_idx_tree_migrate_rightward(arena, pt_idx_hdr_to_tree(final_hdr, left_tag), final_hdr, final_size);
             *out_size_words = final_size;
             return final_hdr;
@@ -309,7 +132,7 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
         case 0xE: // Left Tree, Right List
             pt_idx_list_unlink(ftr + 1, right_tag);
             final_hdr  = hdr - left_tag;
-            final_size = current_size + left_tag + right_tag;
+            final_size += left_tag + right_tag;
             pt_idx_tree_migrate_rightward(arena, pt_idx_hdr_to_tree(final_hdr, left_tag), final_hdr, final_size);
             *out_size_words = final_size;
             return final_hdr;
@@ -319,48 +142,237 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ft
             // Keep right stationary, completely unlink left node to prevent duplicates
             final_hdr = hdr - left_tag;
             pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, left_tag));
-            final_size = current_size + left_tag + right_tag;
-            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_hdr, final_size);
+            final_size += left_tag + right_tag;
+            pt_idx_tree_absorb_stationary_right(pt_idx_hdr_to_tree(ftr + 1, right_tag), final_size);
+			final_hdr[0] = final_size;
             *out_size_words = final_size;
             return final_hdr;
+
+		default:
+			__builtin_trap(); 
     }
 
     *out_size_words = final_size;
-    final_hdr[0] = final_size;
 
 	/* ============================================================================
      * SWITCH MATRIX 2: RE-INDEXING ROUTING TABLE
      * ============================================================================ */
-    switch (final_size) {
-        case 2:
+    switch ((unsigned)final_size >> 1) {
+		case 0:
+			__builtin_trap(); 
+        case 1:
             // Remnant space (2 words). Completely passive.
 			final_hdr[1] = final_size;
             break;
             
-        case 4:
-        case 6:
-            pt_idx_list_insert(arena, final_hdr, final_size);
+        case 2:
+        case 3:
+            pt_idx_list_add(arena, final_hdr, final_size);
             break;
             
-        case 8:
+        case 4:
         default:
             // Size 8 and all larger tree tiers flow uniformly into our address-ordered index.
             // Historical vector markers (node->hdr[0]) are preserved automatically in-place!
-            pt_idx_tree_insert(arena, final_hdr, final_size);
+            pt_idx_tree_insert(arena, arena->root, final_hdr, final_size);
             break;
     }
+    final_hdr[0] = final_size;
 
     return final_hdr;
 }
 
-void pt_idx_tree_insert(pt_arena_t* arena, word_t* final_hdr, word_t final_size) {
-    pt_redblack_t* x = arena->root;
+void pt_idx_list_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t* final_hdr, word_t* right_hdr, word_t* bdry_hdr) 
+{
+	word_t current_size = bdry_hdr - left_hdr;
+
+	word_t left_tag = final_hdr - left_hdr;
+	word_t right_tag = bdry_hdr - right_hdr;
+
+    // 1. Branchless status token collection
+    unsigned left_state  = (2 <= left_tag) + (4 <= left_tag);
+    unsigned right_state = (2 <= right_tag) + (4 <= right_tag);
+
+    // 2. Pack neighbors into a 4-bit key (16 possible execution values)
+    unsigned neighbor_state = left_state * 3 + right_state;
+
+    /* ============================================================================
+     * SWITCH MATRIX 1: UNLINKING AND STRUCTURAL SHORTCUTS
+     * ============================================================================ */
+	pt_idx_list_unlink(left_hdr, current_size);
+
+	switch (neighbor_state) {
+		case 0 * 3 + 0: // Exact Fit
+			break;
+
+		case 0 * 3 + 1: // Left Fit, Right Remnant
+			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2; 
+			break;
+
+		case 0 * 3 + 2: // Left Fit, Right List
+            pt_idx_list_insert(arena, right_hdr, right_tag);
+			break;
+
+		case 1 * 3 + 0: // Left Remnant, Right Fit
+			left_hdr[0] = 2;
+			final_hdr[-1] = 2;
+			break;
+
+		case 1 * 3 + 1: // Left Remanat, Right Remnant
+			final_hdr[-1] = 2;
+			left_hdr[0] = 2;
+			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2; 
+			break;
+
+		case 2 * 3 + 0: // Left List, Right Fit
+            pt_idx_list_insert(arena, left_hdr, left_tag);
+			break;
+
+		case 1 * 3 + 2: // Left Remnant, Right List
+		case 2 * 3 + 1: // Left List, Right Remnant
+		case 2 * 3 + 2: // Left List, Right List
+		default: // Impossible
+			__builtin_trap(); 
+			break;
+	}	
+
+	word_t final_size = right_hdr - final_hdr;
+	right_hdr[-1] = -final_size;
+	final_hdr[0] = -final_size;
+}
+
+void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t* final_hdr, word_t* right_hdr, word_t* bdry_hdr) 
+{
+	word_t current_size = bdry_hdr - left_hdr;
+
+	word_t left_tag = final_hdr - left_hdr;
+	word_t right_tag = bdry_hdr - right_hdr;
+
+    // 1. Branchless status token collection
+    unsigned left_state  = (2 <= left_tag) + (4 <= left_tag) + (8 <= left_tag);
+    unsigned right_state = (2 <= right_tag) + (4 <= right_tag) + (8 <= right_tag);
+
+    // 2. Pack neighbors into a 4-bit key (16 possible execution values)
+    unsigned neighbor_state = left_state * 4 + right_state;
+
+	pt_redblack_t* x;
+    /* ============================================================================
+     * SWITCH MATRIX 1: UNLINKING AND STRUCTURAL SHORTCUTS
+     * ============================================================================ */
+	switch (neighbor_state) {
+		case 0 * 4 + 0: // Exact Fit
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
+			break;
+
+		case 0 * 4 + 1: // Left Fit, Right Remnant
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
+			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2;
+			break;
+
+		case 0 * 4 + 2: // Left Fit, Right List;
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
+            pt_idx_list_insert(arena, right_hdr, right_tag);
+			break;
+
+		case 0 * 4 + 3: // Left Fit, Right Tree
+            pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_tag);
+			right_hdr[0] = right_tag;
+			break;
+
+		case 1 * 4 + 0: // Left Remnant, Right Fit
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
+			final_hdr[-1] = 2;
+			left_hdr[0] = 2;
+			break;
+
+		case 1 * 4 + 1: // Left Remnant, Right Remnant
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
+			final_hdr[-1] = 2;
+			left_hdr[0] = 2;
+			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2;
+			break;
+
+		case 1 * 4 + 2: // Left Remnant, Right List
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
+			final_hdr[-1] = 2;
+			left_hdr[0] = 2;
+            pt_idx_list_insert(arena, right_hdr, right_tag);
+			break;
+
+		case 1 * 4 + 3: // Left Remnant, Right Tree
+            pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_tag);
+			right_hdr[0] = right_tag;
+			final_hdr[-1] = 2;
+			left_hdr[0] = 2;
+			break;
+
+		case 2 * 4 + 0: // Left List, Right Fit
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
+            pt_idx_list_insert(arena, left_hdr, left_tag);
+			break;
+
+		case 2 * 4 + 1: // Left List, Right Remnant
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
+            pt_idx_list_insert(arena, left_hdr, left_tag);
+			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2;
+			break;
+
+		case 2 * 4 + 2: // Left List, Right List
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(left_hdr, current_size));
+            pt_idx_list_insert(arena, left_hdr, left_tag);
+            pt_idx_list_insert(arena, right_hdr, right_tag);
+			break;
+
+		case 2 * 4 + 3: // Left List, Right Tree
+            pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_tag);
+			right_hdr[0] = right_tag;
+            pt_idx_list_insert(arena, left_hdr, left_tag);
+			break;
+
+		case 3 * 4 + 0: // Left Tree, Right Fit
+            pt_idx_tree_migrate_leftward(arena, pt_idx_hdr_to_tree(left_hdr, current_size), left_hdr, left_tag);
+			break;
+
+		case 3 * 4 + 1: // Left Tree, Right Remnant
+            pt_idx_tree_migrate_leftward(arena, pt_idx_hdr_to_tree(left_hdr, current_size), left_hdr, left_tag);
+			bdry_hdr[-1] = 2;
+			right_hdr[0] = 2;
+			break;
+
+		case 3 * 4 + 2: // Left Tree, Right List
+            pt_idx_tree_migrate_leftward(arena, pt_idx_hdr_to_tree(left_hdr, current_size), left_hdr, left_tag);
+            pt_idx_list_insert(arena, right_hdr, right_tag);
+			break;
+
+		case 3 * 4 + 3: // Left Tree, Right Tree
+            pt_idx_tree_absorb_stationary_right(x = pt_idx_hdr_to_tree(left_hdr, current_size), right_tag);
+			right_hdr[0] = right_tag;
+            pt_idx_tree_insert(arena, x, left_hdr, left_tag);
+			left_hdr[0] = left_tag;
+			break;
+		default:
+			__builtin_trap(); 
+			break;
+	}
+
+	word_t final_size = right_hdr - final_hdr;
+	right_hdr[-1] = -final_size;
+	final_hdr[0] = -final_size;
+}
+
+void pt_idx_tree_insert(pt_arena_t* arena, pt_redblack_t* x, word_t* final_hdr, word_t final_size) 
+{
     pt_redblack_t* y = NULL;
     
     // Derive our 8-word tree node layout sitting at the trailing edge of the free space
     pt_redblack_t* z = pt_idx_hdr_to_tree(final_hdr, final_size);
     
-	z->hdr[0] = 8;
+	z->hdr[0] = 8; // watermark
     z->left  = NULL;
     z->right = NULL;
     z->color = PT_RB_RED; // New entries are always marked red
@@ -425,11 +437,12 @@ void pt_idx_tree_insert(pt_arena_t* arena, word_t* final_hdr, word_t final_size)
         }
     }
     
-    arena->root->color = PT_RB_BLACK;
+    if(PT_RB_RED == arena->root->color) arena->root->color = PT_RB_BLACK;
 }
 
 // Internal helper to exchange topological tree relationships without altering block data
-static inline void pt_tree_node_pointer_swap(pt_arena_t* arena, pt_redblack_t* u, pt_redblack_t* v) {
+static inline void pt_tree_node_pointer_swap(pt_arena_t* arena, pt_redblack_t* u, pt_redblack_t* v) 
+{
     if (!u->parent)           arena->root = v;
     else if (u == u->parent->left) u->parent->left = v;
     else                      u->parent->right = v;
@@ -437,7 +450,8 @@ static inline void pt_tree_node_pointer_swap(pt_arena_t* arena, pt_redblack_t* u
     if (v) v->parent = u->parent;
 }
 
-void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z) {
+void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z) 
+{
     pt_redblack_t* y = z;
     pt_redblack_t* x = NULL;
     pt_redblack_t* fixup_parent = NULL;
@@ -445,12 +459,18 @@ void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z) {
 
     if (z->left == NULL) {
         x = z->right;
-        fixup_parent = z->parent;
-        pt_tree_node_pointer_swap(arena, z, z->right);
+        if((fixup_parent = z->parent)) {
+			word_t* fixup_max = fixup_parent->left == z ? &fixup_parent->left_max : &fixup_parent->right_max;
+			*fixup_max = z->right_max;
+		}
+        pt_tree_node_pointer_swap(arena, z, z->right); // remove z 
     } else if (z->right == NULL) {
         x = z->left;
-        fixup_parent = z->parent;
-        pt_tree_node_pointer_swap(arena, z, z->left);
+        if((fixup_parent = z->parent)) {
+			word_t* fixup_max = fixup_parent->left == z ? &fixup_parent->left_max : &fixup_parent->right_max;
+			*fixup_max = z->left_max;
+		}
+        pt_tree_node_pointer_swap(arena, z, z->left); // remove z 
     } else {
         // Node has two children: Locate its absolute successor
         y = z->right;
@@ -463,20 +483,26 @@ void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z) {
             if (x) x->parent = y;
             fixup_parent = y;
         } else {
-            fixup_parent = y->parent;
-            pt_tree_node_pointer_swap(arena, y, y->right);
+            if((fixup_parent = y->parent)) { 
+				word_t* fixup_max = fixup_parent->left == y ? &fixup_parent->left_max : &fixup_parent->right_max;
+				*fixup_max = y->right_max;
+			}
+            pt_tree_node_pointer_swap(arena, y, y->right); // remove y
             y->right = z->right;
+			y->right_max = z->right_max;
             y->right->parent = y;
         }
-        
-        pt_tree_node_pointer_swap(arena, z, y);
+        pt_tree_node_pointer_swap(arena, z, y); // remove z 
         y->left = z->left;
+		y->left_max = z->left_max;
         y->left->parent = y;
         y->color = z->color;
+
+		// Force an immediate backward propagation repair from the deletion pivot point
+		if(y != fixup_parent) pt_node_propagate_aug(y);
     }
 
     // Force an immediate backward propagation repair from the deletion pivot point
-    pt_node_propagate_aug(y);
     pt_node_propagate_aug(fixup_parent);
 
     // If a black node was unlinked, execute standard balancing fixups to maintain tree properties
@@ -539,6 +565,5 @@ void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z) {
         if (x) x->color = PT_RB_BLACK;
     }
     
-    if (arena->root) arena->root->color = PT_RB_BLACK;
+    if (arena->root && PT_RB_RED == arena->root->color) arena->root->color = PT_RB_BLACK;
 }
-

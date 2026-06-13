@@ -126,3 +126,13 @@ Proteus enforces concurrency scaling invariants using **Hardware-Enforced Shardi
 3. The freeing thread resolves the allocation inside that specific core arena's lock boundary. 
 
 Because lock boundaries are tied directly to hardware cores rather than ephemeral software threads, the maximum number of concurrent threads that can collide on a single arena is structurally bounded by the core's hardware thread configuration. This preserves low lock hold times and insulates the engine's tail latency from scaling degradation under heavy, parallel workloads.
+
+## Authors & Attribution
+
+* **Young H. Song** - *Core Architecture & Design* - [@skypepolus](https://github.com/skypepolus/proteus.git )
+
+See also the list of contributors who participated in optimizing this project.
+
+## License
+
+This project is licensed under the Apache License, Version 2.0 - see the LICENSE(LICENSE) file for complete details.

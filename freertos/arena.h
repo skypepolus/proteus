@@ -13,16 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef PT_CORE_H
-#define PT_CORE_H
+/* freertos/arena.h */
+#ifndef PT_ARENA_H
+#define PT_ARENA_H
 
-// Tuned synchronization thresholds derived from our concurrency model
-#define MALLOC_SPIN_COUNTER	500
-#define FREE_SPIN_COUNTER	250
+#include "primitives.h"
+#include "arena-st.h" // We use the single-arena layout for RTOS
 
-/* ============================================================================
- * CORE PROTOTYPES
- * ============================================================================ */
-pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words);
+// The actual static SRAM chunk Proteus will manage
+extern uint8_t ucHeap[configTOTAL_HEAP_SIZE];
 
-#endif // PT_CORE_H
+void pt_freertos_init(void);
+
+static inline pt_arena_t* pt_arena_get_local(void) 
+{
+    if (__builtin_expect(g_pt.num_cores == 0, 0)) {
+        pt_freertos_init();
+    }
+    return g_pt.arenas;
+}
+
+#endif // PT_ARENA_H

@@ -13,16 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef PT_CORE_H
-#define PT_CORE_H
+#ifndef __platform_h__
+#define __platform_h__ __platform_h__
 
-// Tuned synchronization thresholds derived from our concurrency model
-#define MALLOC_SPIN_COUNTER	500
-#define FREE_SPIN_COUNTER	250
+#define hybrid_try(lock) (1)
+#define hybrid_lock(lock, spin) do { } while(0)
+#define hybrid_unlock(lock) do { } while(0)
 
-/* ============================================================================
- * CORE PROTOTYPES
- * ============================================================================ */
-pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words);
+#define PT_SINGLE_THREAD PT_SINGLE_THREAD
 
-#endif // PT_CORE_H
+#define PT_SUPER_PAGE_WORDS      ((word_t)(UINTPTR_MAX / PT_WORD_SIZE_BYTES))
+
+#endif/*__platform_h__*/

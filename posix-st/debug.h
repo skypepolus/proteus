@@ -13,16 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef PT_CORE_H
-#define PT_CORE_H
 
-// Tuned synchronization thresholds derived from our concurrency model
-#define MALLOC_SPIN_COUNTER	500
-#define FREE_SPIN_COUNTER	250
+#ifndef __debug_h__
+#define __debug_h__ __debug_h__
 
-/* ============================================================================
- * CORE PROTOTYPES
- * ============================================================================ */
-pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words);
+#ifdef DEBUG
 
-#endif // PT_CORE_H
+#include <stdlib.h>
+
+void *pt_debug_malloc(size_t size);
+void pt_debug_free(void *ptr);
+void *pt_debug_realloc(void *ptr, size_t size);
+
+#define malloc(size) pt_debug_malloc(size)
+#define free(ptr) pt_debug_free(ptr)
+#define realloc(ptr, size) pt_debug_realloc(ptr, size)
+
+#endif
+
+#endif/*__debug_h__*/

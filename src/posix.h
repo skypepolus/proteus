@@ -13,16 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef PT_CORE_H
-#define PT_CORE_H
+#ifndef __posix_h__
+#define __posix_h__ __posix_h__
 
-// Tuned synchronization thresholds derived from our concurrency model
-#define MALLOC_SPIN_COUNTER	500
-#define FREE_SPIN_COUNTER	250
+#include "arena.h"
+#ifdef PT_POSIX 
+#include <sys/mman.h>
+#include <stddef.h>
+#endif
 
-/* ============================================================================
- * CORE PROTOTYPES
- * ============================================================================ */
-pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words);
+void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words, word_t coalesced_size);
+#ifndef WASM_PAGE_SIZE 
+static inline int pt_platform_purge_pages(void* addr, size_t length) {
+#if defined(__linux__)
+    return madvise(addr, length, MADV_DONTNEED);
+#else
+    return madvise(addr, length, MADV_FREE);
+#endif
+}
+#endif
 
-#endif // PT_CORE_H
+#endif/*__posix_h__*/
