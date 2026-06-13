@@ -17,7 +17,12 @@
 #define __platform_h__ __platform_h__
 
 #ifndef PT_SUPER_PAGE_BYTES
-#define PT_SUPER_PAGE_BYTES      ((word_t)2 * 1024 * 1024 * 1024) // 4 GiB Default
+#define PT_SUPER_PAGE_BYTES      ((word_t)4 * 1024 * 1024 * 1024) // 4 GiB Default
 #endif
+
+// Dynamically derive the mask from the size
+#define PT_SUPER_PAGE_MASK  ((uintptr_t)PT_SUPER_PAGE_BYTES - 1)
+
+#define PT_SUPER_PAGE_WORDS      (PT_SUPER_PAGE_BYTES / PT_WORD_SIZE_BYTES)
 
 #endif/*__platform_h__*/

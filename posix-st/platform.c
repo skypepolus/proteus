@@ -5,12 +5,14 @@
 
 pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words) 
 {
-	size_t increment = size_words * sizeof(word_t);
+	size_t increment = (size_words < 8 ? 8 : size_words) * sizeof(word_t);
 	pt_superpage_t* superpage = g_pt.superpage;
+
 	word_t* addr;
 	word_t tail_words;
 	word_t* tail_hdr;
 	pt_redblack_t* node;
+
 	if(0 < superpage->hdr[-1]) {
 		tail_words = superpage->hdr[-1];
 		tail_hdr = superpage->hdr - tail_words;

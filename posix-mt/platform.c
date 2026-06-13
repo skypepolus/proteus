@@ -30,7 +30,7 @@ pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t siz
 	word_t  huge_words = PT_HUGE_THRESHOLD_WORDS;
 	
 	pt_idx_tree_insert(arena, arena->root, huge_hdr, huge_words);
-	huge_hdr[0] = PT_HUGE_THRESHOLD_WORDS;
+	huge_hdr[0] = huge_words;
 	pt_redblack_t* node = pt_idx_hdr_to_tree(huge_hdr, huge_words);
 	node->hdr[0] = huge_words; // initialize watermark
 

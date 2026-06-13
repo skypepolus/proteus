@@ -38,11 +38,6 @@ typedef intptr_t word_t;
 
 #define PT_WORDS_TO_BYTES(words) ((words) * PT_WORD_SIZE_BYTES)
 
-// Dynamically derive the mask from the size
-#define PT_SUPER_PAGE_MASK  ((uintptr_t)PT_SUPER_PAGE_BYTES - 1)
-
-#define PT_SUPER_PAGE_WORDS      (PT_SUPER_PAGE_BYTES / PT_WORD_SIZE_BYTES)
-
 #define PT_HUGE_THRESHOLD_WORDS  (PT_SUPER_PAGE_WORDS - 4)
 
 #define PT_INDEX_WATERMARK_MASK		(PT_INDEX_WATERMARK_BYTES - 1)
@@ -63,8 +58,8 @@ typedef struct pt_remnant {
 } pt_remnant_t;
 
 typedef struct pt_link {
-    struct pt_link* next;
     struct pt_link* prev;
+    struct pt_link* next;
     word_t ftr[1]; // Maps to the physical footer at (hdr_ptr + size - 1)
 } pt_link_t;
 

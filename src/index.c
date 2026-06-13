@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 #include "index.h"
+#ifdef PT_POSIX 
 #include <string.h>
+#endif
 
 word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ftr, word_t* out_size_words) 
 {

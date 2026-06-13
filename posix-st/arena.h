@@ -18,7 +18,10 @@
 
 #include "primitives.h"
 #include "arena-st.h"
+
+#ifndef WASM_PAGE_SIZE
 #include <unistd.h>
+#endif
 
 static inline pt_arena_t* pt_arena_get_local(void) 
 {

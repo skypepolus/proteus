@@ -17,15 +17,17 @@
 #include "core.h"
 #include "index.h"
 #include "proteus.h"
+#ifdef PT_POSIX
 #include <sys/mman.h>
 #include <string.h> // For high-performance architecture-optimized memcpy/memset
 #include <errno.h>
 #include <immintrin.h>
+#endif
 
 static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_words) {
 
 	pt_link_t* head, *tail;
-
+	pt_redblack_t* found_node;
 	switch((unsigned)size_words >> 1) {
 	case 0:
 		 __builtin_trap();
@@ -60,7 +62,7 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
      * LANE B: TARGET IS 8 WORDS (64 BYTES)
      * -------------------------------------------------------------------- */
 	default:
-        pt_redblack_t* found_node = pt_idx_tree_find_first_fit(arena->root, size_words);
+        found_node = pt_idx_tree_find_first_fit(arena->root, size_words);
         if (found_node != NULL) {
             return (void*)(pt_idx_ftr_to_hdr(found_node->ftr) + 1);
         }
@@ -99,7 +101,7 @@ void proteus_free(void* ptr)
     word_t* ftr_ptr = hdr_ptr + size_words - 1;
     word_t coalesced_size;
     word_t* final_hdr = pt_idx_coalesce_state_machine(arena, hdr_ptr, ftr_ptr, &coalesced_size);
-
+	#ifdef PT_POSIX
 	if (pt_arena_watermark_no(coalesced_size)) { 
 		hybrid_unlock(&arena->lock);
 		return;
@@ -115,6 +117,9 @@ void proteus_free(void* ptr)
 		}
 		#endif/*PT_SINGLE_THREAD*/
 	}
+	#else
+	(void)final_hdr;
+	#endif
 	hybrid_unlock(&arena->lock);
 }
 
@@ -291,6 +296,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
     if (__builtin_expect(0 <= *hdr_ptr, 0)) __builtin_trap(); // Guard against corruption
     
 	size_t current_bytes;
+	(void)current_bytes;
 
     word_t current_words = -*hdr_ptr < -(word_t)PT_HUGE_THRESHOLD_WORDS ? PT_HUGE_BLOCK_WORDS(hdr_ptr) : -*hdr_ptr;
     word_t target_words  = PT_TOTAL_BLOCK_WORDS(next_bytes);
@@ -338,6 +344,9 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 		break;
 
 	case 0 * 4 + 1 * 2 + 1: // target is smaller & target is huge     & current is huge
+	#ifdef PT_SINGLE_THREAD
+		__builtin_trap();
+	#else
     /* ============================================================================
      * MATRIX LANE 2: DIRECT-MMAP CONVERSIONS (HUGE TIER)
      * ============================================================================ */
@@ -351,7 +360,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 			hdr_ptr[-1] -= suffix_trim;
 		}
 		return ptr;
-
+	#endif
 	case 1 * 4 + 0 * 2 + 0: // target is bigger  & target is not huge & current is not huge
 	/* ============================================================================
 	 * MATRIX LANE 3: ARENA-MANAGED CONVERSIONS (SMALL/TREE TIER)
