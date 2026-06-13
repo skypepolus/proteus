@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proteus WASM Engine Test</title>
+    <style>
+        body { font-family: monospace; background: #121212; color: #00ff00; padding: 2rem; }
+    </style>
+</head>
+<body>
+    <h2>Proteus WASM Engine: Live Test</h2>
+    <p>Open your browser's Developer Tools (F12) -> Console to see the memory allocation logs.</p>
+
+    <script type="module">
+        async function testProteus() {
+            try {
+                // 1. Fetch and compile the Proteus WASM binary
+                const response = await fetch('proteus-st.wasm');
+                const { instance } = await WebAssembly.instantiateStreaming(response);
+                const proteus = instance.exports;
+
+                console.log("🚀 Proteus WASM Engine Loaded Successfully!");
+                console.log("Exported functions:", proteus);
+
+                // 2. Allocate 64 bytes of memory
+                const ptr1 = proteus.malloc(64);
+                console.log(`[malloc] Allocated 64 bytes at memory offset: 0x${ptr1.toString(16)}`);
+
+                // 3. Write data directly into Proteus's managed WASM memory
+                // We map a Float32 view over the exact memory address Proteus gave us
+                const floatView = new Float32Array(proteus.memory.buffer, ptr1, 4);
+                floatView.set([3.14, 2.71, 1.61, 42.0]);
+                console.log("[write] Data successfully written to the WASM heap at ptr1.");
+
+                // 4. Allocate a second block to verify pointer bumping and indexing
+                const ptr2 = proteus.malloc(128);
+                console.log(`[malloc] Allocated 128 bytes at memory offset: 0x${ptr2.toString(16)}`);
+
+                // 5. Read the data back to prove memory safety
+                const readView = new Float32Array(proteus.memory.buffer, ptr1, 4);
+                console.log(`[read] Data verified at ptr1:`, Array.from(readView));
+
+                // 6. Free the memory (Triggering Proteus's coalescing state machine)
+                proteus.free(ptr1);
+                console.log(`[free] Freed ptr1 (0x${ptr1.toString(16)})`);
+                
+                proteus.free(ptr2);
+                console.log(`[free] Freed ptr2 (0x${ptr2.toString(16)})`);
+
+                console.log("✅ Memory successfully coalesced back into the Proteus index.");
+
+            } catch (error) {
+                console.error("❌ Failed to load or execute Proteus WASM:", error);
+            }
+        }
+
+        testProteus();
+    </script>
+</body>
+</html>

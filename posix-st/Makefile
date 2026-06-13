@@ -3,7 +3,7 @@
 # ============================================================================
 
 CC       = gcc
-CFLAGS   = -Wall -Wextra -std=c11 -fPIC -D_GNU_SOURCE -Wno-implicit-fallthrough 
+CFLAGS   = -Wall -Wextra -std=c11 -fPIC -D_GNU_SOURCE -DPT_POSIX -Wno-implicit-fallthrough 
 INCLUDES = -I. -I../include -I../src -I../deps/hybrid-lock/include
 
 # Dynamic Shared Object Targets
@@ -26,12 +26,12 @@ OBJS_DEBUG = $(SRCS:../src/%.c=src/%.debug.o) $(PRTS:%.c=%.debug.o) debug.debug.
 all: bench debug
 
 # ----------------------------------------------------------------------------
-# Profile 1: Benchmark / Production Engine (-O3, Hidden Internals)
+# Profile 1: Benchmark / Production Engine (-Oz, Hidden Internals)
 # ----------------------------------------------------------------------------
 bench: $(TARGET_BENCH_SO) $(TARGET_BENCH_A)
 
 $(TARGET_BENCH_SO): $(OBJS_BENCH)
-	$(CC) -shared -O3 -flto -fno-strict-aliasing $(OBJS_BENCH) -o $(TARGET_BENCH_SO)
+	$(CC) -shared -Oz -flto -fno-strict-aliasing $(OBJS_BENCH) -o $(TARGET_BENCH_SO)
 	@echo "[Proteus Build]: Created Benchmark Shared Object -> $(TARGET_BENCH_SO)"
 
 $(TARGET_BENCH_A): $(OBJS_BENCH)
@@ -39,10 +39,10 @@ $(TARGET_BENCH_A): $(OBJS_BENCH)
 	@echo "[Proteus Build]: Created Benchmark Static Archive -> $(TARGET_BENCH_A)"
 
 src/%.bench.o: ../src/%.c
-	$(CC) $(CFLAGS) -O3 -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -Oz -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
 
 %.bench.o: %.c
-	$(CC) $(CFLAGS) -O3 -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -Oz -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
 
 # ----------------------------------------------------------------------------
 # Profile 2: High-Visibility Debug Engine (-g, -O0, Full GDB Access, No Interpose)

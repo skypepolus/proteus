@@ -16,8 +16,22 @@
 #include "posix.h"
 #include "platform.h"
 #include "proteus.h"
+#ifdef PT_POSIX 
 #include <string.h>
 #include <errno.h>
+#else
+
+extern int errno;
+
+#define ENOMEM 12
+#define EINVAL 22
+
+typedef uintptr_t size_t;
+
+void* memset(void* dest, int val, size_t len);
+void* memcpy(void* dest, const void* src, size_t len);
+
+#endif
 
 /* ============================================================================
  * STANDARD ALLOCATOR INTERPOSITION BRIDGE

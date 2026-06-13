@@ -17,8 +17,11 @@
 #include "core.h"
 #include "index.h"
 #include "posix.h"
+
+#ifndef WASM_PAGE_SIZE
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
