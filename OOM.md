@@ -57,3 +57,13 @@ Proteus achieves a flat spatial profile by eliminating the architectural concept
 When an application calls `proteus_free`, the engine immediately performs a bitmask operation to identify the managing 4GB Superpage header, accesses the localized core arena lock, and checks the absolute boundary addresses of the left and right physical neighbors. If a neighbor is free, they are unlinked from the tree and merged into a single continuous free block **instantly**.
 
 Furthermore, because the structural vectors required to manage the Tier 3 tree live directly inside the dead space of the free payloads themselves, the tracking metadata overhead is locked to a perfect $O(1)$ invariant of 16 bytes per block. Proteus trades away microsecond-level local caching speed to guarantee that your physical memory footprint never balloons, replacing unpredictable spatial risks with a highly structured, sub-microsecond time invariant.
+
+## Authors & Attribution
+
+* **Young H. Song** - *Core Architecture & Design* - [@skypepolus](https://github.com/skypepolus/proteus.git )
+
+See also the list of contributors who participated in optimizing this project.
+
+## License
+
+This project is licensed under the Apache License, Version 2.0 - see the LICENSE(LICENSE) file for complete details.

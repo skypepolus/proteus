@@ -103,3 +103,13 @@ Proteus trades away short-term transactional speed under high fragmentation to g
 | **Metadata Scaling** | Linear ($O(N)$) expansion as slabs, runs, and thread-local bins multiply. | Perfect Invariant ($O(1)$). Structural tracking vectors are inline or embedded. |
 | **Worst-Case Swiss Cheese Response** | **Spatial Collapse (P99.9 Space Peak):** High physical memory waste due to isolated size-class pools. | **Latency Stabilization (P99.9 Time Peak):** 0-byte space waste; operations consistently hit the $O(\log N)$ ceiling. |
 | **Memory Reclamation** | Lazy or deferred. Relies on background flushes or synchronous kernel `madvise` sweeps. | Immediate. Address-ordered neighbor merging occurs synchronously on every `free()` call. |
+
+## Authors & Attribution
+
+* **Young H. Song** - *Core Architecture & Design* - [@skypepolus](https://github.com/skypepolus/proteus.git )
+
+See also the list of contributors who participated in optimizing this project.
+
+## License
+
+This project is licensed under the Apache License, Version 2.0 - see the LICENSE(LICENSE) file for complete details.

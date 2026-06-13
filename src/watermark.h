@@ -13,16 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef PT_CORE_H
-#define PT_CORE_H
+#ifndef PT_WATERMARK_H
+#define PT_WATERMARK_H
 
-// Tuned synchronization thresholds derived from our concurrency model
-#define MALLOC_SPIN_COUNTER	500
-#define FREE_SPIN_COUNTER	250
+extern g_pt_t g_pt;
 
-/* ============================================================================
- * CORE PROTOTYPES
- * ============================================================================ */
-pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words);
+#define PT_INDEX_WATERMARK_BYTES	(64 * 1024)
 
-#endif // PT_CORE_H
+#define pt_arena_watermark_no(coalesced_size) __builtin_expect((coalesced_size) < PT_INDEX_WATERMARK_WORDS + 8, 1) 
+
+void* pt_arena_watermark_release(pt_arena_t* arena, pt_superpage_t* superapge, word_t* final_hdr, word_t size_words, word_t coalesced_size);
+
+#endif // PT_WATERMARK_H

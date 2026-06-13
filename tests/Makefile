@@ -5,7 +5,7 @@
 CC       = gcc
 # Base compilation flags for testing: full debug symbols, no optimization,
 # feature macros enabled, and superpages downsized to 4MB for high test coverage.
-BASE_CFLAGS = -Wall -Wextra -std=c11 -g -O0 -D_GNU_SOURCE -DDEBUG -DPT_SUPER_PAGE_BYTES=4194304
+BASE_CFLAGS = -Wall -Wextra -std=c11 -g -O0 -D_GNU_SOURCE -DDEBUG -DPT_SUPER_PAGE_BYTES=4194304 -Wno-implicit-fallthrough  
 INCLUDES    = -I../include -I../src -I../deps/hybrid-lock/include
 LDFLAGS     = -lpthread
 
