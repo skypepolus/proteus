@@ -84,6 +84,7 @@ make -C posix-st/tests run_stress
 make -C posix-mt/tests run_stress
 
 # For Linux Multi-thread
+sudo sysctl -w vm.overcommit_memory=1
 /usr/bin/time -v env LD_PRELOAD=posix-mt/libproteus-mt.so posix-st/tests/test_stress_bench
 
 # For macOS
