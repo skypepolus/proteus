@@ -33,10 +33,4 @@
 // Define WASM-specific builtins for memory growth
 #define WASM_PAGE_SIZE 65536
 
-#define sysconf(_SC_PAGEIZE) 4096
-#define brk(addr) wasm_brk(addr)
-#define sbrk(zero) __builtin_wasm_memory_size(zero) 
-
-int wasm_brk(void* addr);
-
 #endif /* __platform_h__ */

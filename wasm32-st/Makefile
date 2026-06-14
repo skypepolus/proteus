@@ -5,7 +5,7 @@
 CC       = clang
 CFLAGS   = -Oz -Wall -Wextra -std=c11 -fno-builtin -nostdlib \
            -Wno-implicit-fallthrough -DPT_SINGLE_THREAD --target=wasm32
-INCLUDES = -I. -I../include -I../src -I../posix-st -I../deps/hybrid-lock/include
+INCLUDES = -I. -I../include -I../src 
 
 # Clang Linker flags for pure WASM
 LDFLAGS  = -Wl,--no-entry \
@@ -16,7 +16,7 @@ LDFLAGS  = -Wl,--no-entry \
            -Wl,--allow-undefined 
 
 TARGET   = proteus-st.wasm
-SRCS     = ../src/core.c ../src/index.c ../src/posix.c ../posix-st/arena.c platform.c
+SRCS     = ../src/core.c ../src/index.c ../src/posix.c platform.c
 OBJS     = $(SRCS:.c=.o)
 
 all: $(TARGET)
