@@ -7,20 +7,17 @@
 int errno;
 
 // Track the top of the WASM linear memory
-void* wasm_heap_ptr = 0;
+void* __heap_end = 0;
 
 // Replaces the POSIX brk() system call
 int wasm_brk(void* addr) {
-    uintptr_t current_pages = __builtin_wasm_memory_size(0);
-    uintptr_t target_pages = ((uintptr_t)addr + (WASM_PAGE_SIZE - 1)) / WASM_PAGE_SIZE;
-    
-    if (target_pages > current_pages) {
-        uintptr_t delta = target_pages - current_pages;
-        if (__builtin_wasm_memory_grow(0, delta) == (size_t)-1) {
+	if((uintptr_t)__heap_end < (uintptr_t)addr) {
+		uintptr_t delta = ((uintptr_t)addr - (uintptr_t)__heap_end + (WASM_PAGE_SIZE - 1)) & ~((uintptr_t)WASM_PAGE_SIZE - 1);
+		if (__builtin_wasm_memory_grow(0, delta / WASM_PAGE_SIZE) == (size_t)-1) {
             return -1; // Out of memory (Browser limit reached)
         }
-    }
-    wasm_heap_ptr = addr;
+		__heap_end = (void*)(__builtin_wasm_memory_size(0) << 16);
+	}
     return 0;
 }
 
