@@ -64,24 +64,15 @@ void pt_arena_init_routine(void)
     /* 2. Calculate allocation requirements */
     size_t alloc_bytes = (size_t)detected_cores * sizeof(pt_arena_t);
     
-    /* 3. Replace sbrk with a secure anonymous mmap segment */
-    void* raw_mapping = mmap(
-        NULL, 
-        alloc_bytes, 
-        PROT_READ | PROT_WRITE, 
-        MAP_PRIVATE | MAP_ANONYMOUS, 
-        -1, 
-        0
-    );
+    /* 3. Calculate allocation requirements */
+    void* raw_mapping = (void*)(((uintptr_t)sbrk(0) + 64 - 1) & ~((uintptr_t)64 - 1));
     
-    if (raw_mapping == MAP_FAILED) {
-        // Critical system failure hook: crash fast before memory corruption occurs
-        __builtin_trap(); 
-    }
-
 	pt_arena_t* expected = NULL;
 	if(atomic_compare_exchange_strong(&g_pt.arenas, &expected, raw_mapping)) {
-		g_pt.arenas = (pt_arena_t*)raw_mapping;
+		if(-1 == brk((void*)((uintptr_t)raw_mapping + alloc_bytes))) {
+			// Critical system failure hook: crash fast before memory corruption occurs
+			__builtin_trap(); 
+		}
 
 		/* 4. Individual Core Arena Bootstrapping Loop */
 		for (long i = 0; i < detected_cores; i++) {
@@ -121,7 +112,6 @@ void pt_arena_init_routine(void)
 		// Bind the fork handlers AFTER the core count is published
 		pthread_atfork(pt_arena_prepare_fork, pt_arena_parent_child_fork, pt_arena_parent_child_fork);
 	} else {
-		munmap(raw_mapping, alloc_bytes);
 		while(0 == atomic_load_explicit(&g_pt.num_cores, memory_order_acquire)) {
 			platform_spin_pause();
 		}

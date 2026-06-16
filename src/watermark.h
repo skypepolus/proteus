@@ -18,7 +18,7 @@
 
 extern g_pt_t g_pt;
 
-#define PT_INDEX_WATERMARK_BYTES	(64 * 1024)
+#define PT_INDEX_WATERMARK_BYTES	(4 * 1024 * 1024)
 
 #define pt_arena_watermark_no(coalesced_size) __builtin_expect((coalesced_size) < PT_INDEX_WATERMARK_WORDS + 8, 1) 
 
