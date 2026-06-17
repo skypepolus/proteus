@@ -29,19 +29,17 @@
 
 __attribute__((aligned(64))) g_pt_t g_pt;
 
-void* pt_arena_watermark_release(pt_arena_t* arena, pt_superpage_t* superpage, word_t* final_hdr, word_t size_words, word_t coalesced_size)
+void* pt_arena_watermark_release(pt_arena_t* arena, pt_superpage_t* superpage, word_t* final_hdr, word_t size_words)
 {
-	if(__builtin_expect(final_hdr + coalesced_size == superpage->hdr, 0)) {
-		pt_redblack_t* node = pt_idx_hdr_to_tree(final_hdr, coalesced_size);
-
-		word_t* addr = (word_t*)(((uintptr_t)(final_hdr + 8 + 1) + PT_INDEX_WATERMARK_MASK) & ~(uintptr_t)PT_INDEX_WATERMARK_MASK);
-
-		superpage->hdr = addr - 1;
-		pt_idx_tree_migrate_leftward(arena, node, final_hdr, superpage->hdr - final_hdr);
-		if(brk(addr)) __builtin_trap();
+	if(__builtin_expect(final_hdr + final_hdr[0] == superpage->hdr, 0)) {
+		pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, final_hdr[0]));
+		superpage->hdr = final_hdr;
 		superpage->hdr[0] = 0;
+		if(-1 == brk((void*)(superpage->hdr + 1))) {
+			__builtin_trap();
+		}
 	} else {
-		pt_arena_watermark(arena, final_hdr, size_words, coalesced_size);
+		pt_arena_watermark(arena, final_hdr, size_words);
 	}
 	return NULL;
 }

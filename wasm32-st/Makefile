@@ -16,7 +16,7 @@ LDFLAGS  = -Wl,--no-entry \
            -Wl,--allow-undefined 
 
 TARGET   = proteus-st.wasm
-SRCS     = ../src/core.c ../src/index.c ../src/posix.c platform.c
+SRCS     = ../src/core.c ../src/index.c ../src/posix.c ../src/platform-st.c platform.c
 OBJS     = $(SRCS:.c=.o)
 
 all: $(TARGET)

@@ -22,12 +22,13 @@
 #include <string.h> // For high-performance architecture-optimized memcpy/memset
 #include <errno.h>
 #include <immintrin.h>
+#else
+void *memcpy(void *dest, const void *src, size_t n);
 #endif
 
-static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_words) {
+static inline word_t* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_words) {
 
 	pt_link_t* head, *tail;
-	pt_redblack_t* found_node;
 	switch((unsigned)size_words >> 1) {
 	case 0:
 		 __builtin_trap();
@@ -42,9 +43,7 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
 		head = &arena->segregate[0].head;
 		tail = &arena->segregate[0].tail;
         if (head->next != tail) {
-            pt_link_t* node = head->next;
-            word_t* hdr_ptr = pt_idx_link_to_hdr(node, 4);
-            return (void*)(hdr_ptr + 1);
+            return pt_idx_link_to_hdr(head->next, 4);
         }
 	case 3:
     /* --------------------------------------------------------------------
@@ -53,20 +52,14 @@ static inline void* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_
 		head = &arena->segregate[1].head;
 		tail = &arena->segregate[1].tail;
         if (head->next != tail) {
-            pt_link_t* node = head->next;
-            word_t* hdr_ptr = pt_idx_link_to_hdr(node, 6);
-            return (void*)(hdr_ptr + 1);
+            return pt_idx_link_to_hdr(head->next, 6);
         }
 	case 4:
     /* --------------------------------------------------------------------
      * LANE B: TARGET IS 8 WORDS (64 BYTES)
      * -------------------------------------------------------------------- */
 	default:
-        found_node = pt_idx_tree_find_first_fit(arena->root, size_words);
-        if (found_node != NULL) {
-            return (void*)(pt_idx_ftr_to_hdr(found_node->ftr) + 1);
-        }
-		break;
+        return pt_idx_tree_find_first_fit(arena->root, size_words);
     }
 
     return NULL; // List caches are fully depleted for these tiers
@@ -98,15 +91,13 @@ void proteus_free(void* ptr)
     pt_arena_t* arena         = superpage->arena_ptr;
     hybrid_lock(&arena->lock, FREE_SPIN_COUNTER);
 
-    word_t* ftr_ptr = hdr_ptr + size_words - 1;
-    word_t coalesced_size;
-    word_t* final_hdr = pt_idx_coalesce_state_machine(arena, hdr_ptr, ftr_ptr, &coalesced_size);
+    word_t* final_hdr = pt_idx_coalesce_state_machine(arena, hdr_ptr, hdr_ptr + size_words);
 	#ifdef PT_POSIX
-	if (pt_arena_watermark_no(coalesced_size)) { 
+	if (pt_arena_watermark_no(final_hdr[0])) { 
 		hybrid_unlock(&arena->lock);
 		return;
 	} else { 
-		void* superpage_base = pt_arena_watermark_release(arena, superpage, final_hdr, size_words, coalesced_size);
+		void* superpage_base = pt_arena_watermark_release(arena, superpage, final_hdr, size_words);
 		#ifdef PT_SINGLE_THREAD
 		(void)superpage_base;
 		#else
@@ -170,35 +161,40 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
         // 1. Allocate a raw block large enough from the arena
 		word_t* left_hdr;
 
-		if(__builtin_expect(0 != (aligned_payload = (uintptr_t)pt_core_try_segregated_alloc(arena, request_words)), 1)) {
-			left_hdr = (word_t*)aligned_payload - 1;
-		} else { 
-			pt_redblack_t* found_node = pt_core_allocate_superpage_fallback(arena, request_words);
-			if(found_node != NULL) {
-				left_hdr = pt_idx_ftr_to_hdr(found_node->ftr);
-				aligned_payload = (uintptr_t)(left_hdr + 1);
-			} else {
+		if(__builtin_expect(NULL == (left_hdr = pt_core_try_segregated_alloc(arena, request_words)), 0)) {
+			if(__builtin_expect(NULL == (left_hdr = pt_core_allocate_superpage_fallback(arena, request_words)), 0)) {
 				hybrid_unlock(&arena->lock); 
 				return NULL;
 			}
 		}
 
 		// 2. Find the aligned payload boundary inside the raw payload
-		aligned_payload = 0 == alignment ? aligned_payload : (aligned_payload + alignment - 1) & ~(alignment - 1);
+		aligned_payload = 0 == alignment ? (uintptr_t)(left_hdr + 1) : ( (uintptr_t)(left_hdr + 1) + alignment - 1) & ~(alignment - 1);
 
         // 3. Calculate structural boundaries
-		if(8 > left_hdr[0]) {
+		switch((unsigned)left_hdr[0] >> 1) {
+		case 0:
+			__builtin_trap();
+		case 1:
+			left_hdr[0] = -2;
+			left_hdr[1] = -2;
+			break;
+		case 2:
+		case 3:
 			pt_idx_list_split_state_machine(arena, 
 				left_hdr, 
 				(word_t*)aligned_payload - 1, 
 				(word_t*)aligned_payload - 1 + PT_TOTAL_BLOCK_WORDS(size_bytes),
 				left_hdr + left_hdr[0]);
-		} else {
+			break;
+		case 4:
+		default:
 			pt_idx_tree_split_state_machine(arena,
 				left_hdr, 
 				(word_t*)aligned_payload - 1, 
 				(word_t*)aligned_payload - 1 + PT_TOTAL_BLOCK_WORDS(size_bytes),
 				left_hdr + left_hdr[0]);
+			break;
 		}
 
 		// Safely unlock before passing remnants to free(), preventing deadlocks completely
@@ -324,16 +320,14 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 		arena = superpage->arena_ptr;
 		hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER);
 
-		remainder_hdr = hdr_ptr + target_words;
+		hdr_ptr[0] = -target_words;
+		hdr_ptr[target_words - 1] = -target_words;
 
+		remainder_hdr = hdr_ptr + target_words;
 		word_t delta = current_words - target_words;
 		remainder_hdr[0] = -delta; 
 		remainder_hdr[delta - 1] = -delta; 
-		hdr_ptr[0] = -target_words;
-		hdr_ptr[target_words - 1] = -target_words;
-		word_t coalesced_size;
-		word_t* ftr_ptr = remainder_hdr + delta - 1;
-		pt_idx_coalesce_state_machine(arena, remainder_hdr, ftr_ptr, &coalesced_size);
+		(void)pt_idx_coalesce_state_machine(arena, remainder_hdr, remainder_hdr + delta);
 
 		hybrid_unlock(&arena->lock);
 
@@ -450,9 +444,6 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 	default: // impossible
 		__builtin_trap();
 	}
-	#ifdef PT_SINGLE_THREAD
-	__builtin_trap();
-	#else
     // Hard Managed Fallback: In-place options exhausted, migrate data
     void* new_payload = proteus_memalign(0, next_bytes);
     if (__builtin_expect(new_payload == NULL, 0)) {
@@ -462,5 +453,4 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
     proteus_free(ptr);
 
     return new_payload;
-	#endif
 }

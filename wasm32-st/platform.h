@@ -31,6 +31,6 @@
 #define PT_SUPER_PAGE_WORDS      ((word_t)(UINTPTR_MAX / PT_WORD_SIZE_BYTES))
 
 // Define WASM-specific builtins for memory growth
-#define WASM_PAGE_SIZE 65536
+#define PT_INDEX_WATERMARK_BYTES	(64 * 1024)
 
 #endif /* __platform_h__ */

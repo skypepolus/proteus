@@ -207,7 +207,7 @@ static inline void pt_tree_rotate_right(pt_arena_t* arena, pt_redblack_t* y)
     y->parent = x;
 }
 
-static inline pt_redblack_t* pt_idx_tree_find_first_fit(pt_redblack_t* current, word_t size_words) 
+static inline word_t* pt_idx_tree_find_first_fit(pt_redblack_t* current, word_t size_words) 
 {
     while (current != NULL) {
 
@@ -221,7 +221,7 @@ static inline pt_redblack_t* pt_idx_tree_find_first_fit(pt_redblack_t* current, 
         // Step 2: Evaluate the current node.
         // If the left branch didn't have enough room, check if this specific block fits.
         if (current->ftr[0] >= size_words) {
-            return current;
+            return pt_idx_ftr_to_hdr(current->ftr);
         }
 
         // Step 3: Fallback to higher addresses (Right Subtree).
@@ -319,13 +319,12 @@ static inline pt_redblack_t* pt_idx_tree_migrate_leftward(pt_arena_t* arena, pt_
 
 void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z);
 void pt_idx_tree_insert(pt_arena_t* arena, pt_redblack_t* x, word_t* final_hdr, word_t final_size);
-word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ftr, word_t* out_size_words);
+word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* right_hdr);
 void pt_idx_list_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t* final_hdr, word_t* right_hdr, word_t* next_hdr);
 void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t* final_hdr, word_t* right_hdr, word_t* next_hdr);
 
 #if 0
 void* pt_idx_extract_and_split(pt_arena_t* arena, pt_redblack_t* node, word_t r_words);
 #endif
-word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* hdr, word_t* ftr, word_t* out_size_words);
 
 #endif // PT_INDEX_H

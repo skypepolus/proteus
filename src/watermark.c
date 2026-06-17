@@ -20,9 +20,9 @@
 #include <string.h>
 #include <errno.h>
 
-void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words, word_t coalesced_size)
+void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words)
 {
-	pt_redblack_t* node = pt_idx_hdr_to_tree(final_hdr, coalesced_size);
+	pt_redblack_t* node = pt_idx_hdr_to_tree(final_hdr, final_hdr[0]);
 	
 	if (size_words < PT_INDEX_WATERMARK_WORDS) {
 		// If free memory does not exceed 64 KiB threshold
@@ -34,7 +34,7 @@ void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words,
 			return;
 		} else 
 		#endif
-		if (coalesced_size - advised_size < PT_INDEX_WATERMARK_WORDS) {
+		if (final_hdr[0] - advised_size < PT_INDEX_WATERMARK_WORDS) {
 			return;
 		} // Unpurged memory on the left has breached our 64 KiB threshold. Purge it.
 	}
@@ -46,14 +46,14 @@ void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words,
 	uintptr_t page_end   = payload_end & ~arena->page_mask;
 	
 	if (page_start < page_end) {
-		word_t* final_ftr   = final_hdr + coalesced_size - 1;
+		word_t* right_hdr   = final_hdr + final_hdr[0];
 
 		// 1. UNLINK: Remove from the tree so it can't be allocated
 		pt_idx_tree_unlink(arena, node);
 
 		// 2. INVERT TAGS: Disguise as an allocated block so neighbors don't coalesce and double-unlink
-		final_hdr[0] = -coalesced_size;
-		final_ftr[0] = -coalesced_size;
+		final_hdr[0] *= -1;
+		right_hdr[-1] *= -1;
 
 		// 3. DROP LOCK: Allow parallel allocations
 		hybrid_unlock(&arena->lock);
@@ -68,11 +68,11 @@ void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words,
 		// Because we inverted the tags to negative, we satisfy the state machine's 
 		// precondition. It will safely check if neighbors freed themselves while 
 		// we were unlocked, format the final positive tags, and insert it.
-		final_hdr = pt_idx_coalesce_state_machine(arena, final_hdr, final_ftr, &coalesced_size);
+		final_hdr = pt_idx_coalesce_state_machine(arena, final_hdr, right_hdr);
 
 		// 7. Re-anchor the geometric vector tracking
-		node = pt_idx_hdr_to_tree(final_hdr, coalesced_size);
-		word_t advised_size = (final_ftr + 1) - (word_t*)page_start;
+		node = pt_idx_hdr_to_tree(final_hdr, final_hdr[0]);
+		word_t advised_size = right_hdr - (word_t*)page_start;
 		node->hdr[0] = advised_size;
 	}
 }

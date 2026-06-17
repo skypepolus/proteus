@@ -22,8 +22,8 @@
 #include <stddef.h>
 #endif
 
-void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words, word_t coalesced_size);
-#ifndef WASM_PAGE_SIZE 
+void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words);
+#ifdef PT_POSIX
 static inline int pt_platform_purge_pages(void* addr, size_t length) {
 #if defined(__linux__)
     return madvise(addr, length, MADV_DONTNEED);
