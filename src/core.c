@@ -255,13 +255,18 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 }
 
 static inline uintptr_t next_power_of_2(uintptr_t n) {
-    if (sizeof(uintptr_t) == 8) {
-		uintptr_t next = (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clzll(n - 1));
-		return 0 < n ? next : 0;
-    } else {
-		uintptr_t next = (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clz(n - 1)); // Uses 32-bit built-in 
-        return 0 < n ? next : 0;
-    }
+	switch(n) {
+	case 0:
+	case 1:
+		return n;
+	default:
+		if (sizeof(uintptr_t) == 8) {
+			return (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clzll(n - 1));// Uses 64-bit built-in 
+		} else {
+			return (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clz(n - 1));	// Uses 32-bit built-in 
+		}
+	}
+	return 0;
 }
 
 static inline size_t PT_HUGE_PAYLOAD_BYTES(word_t* hdr_ptr) {
