@@ -58,8 +58,8 @@ typedef struct pt_remnant {
 } pt_remnant_t;
 
 typedef struct pt_link {
-    struct pt_link* prev;
     struct pt_link* next;
+    struct pt_link* prev;
     word_t ftr[1]; // Maps to the physical footer at (hdr_ptr + size - 1)
 } pt_link_t;
 

@@ -25,4 +25,6 @@
 
 #define PT_SUPER_PAGE_WORDS      (PT_SUPER_PAGE_BYTES / PT_WORD_SIZE_BYTES)
 
+#define PT_INDEX_WATERMARK_BYTES	(4 * 1024 * 1024)
+
 #endif/*__platform_h__*/

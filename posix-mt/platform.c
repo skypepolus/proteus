@@ -3,7 +3,7 @@
 #include "core.h"
 #include "index.h"
 
-pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words) 
+word_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words) 
 {
 	pt_superpage_t* new_page[2] = { NULL, NULL };
 

@@ -16,6 +16,8 @@
 #ifndef PT_CORE_H
 #define PT_CORE_H
 
+#include "primitives.h"
+
 // Tuned synchronization thresholds derived from our concurrency model
 #define MALLOC_SPIN_COUNTER	500
 #define FREE_SPIN_COUNTER	250
@@ -23,6 +25,6 @@
 /* ============================================================================
  * CORE PROTOTYPES
  * ============================================================================ */
-pt_redblack_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words);
+word_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words);
 
 #endif // PT_CORE_H

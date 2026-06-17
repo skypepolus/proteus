@@ -11,7 +11,7 @@ INCLUDES = -I. \
            -I./FreeRTOS-Kernel/portable/ThirdParty/GCC/Posix
 
 # Proteus Core Sources
-PROTEUS_SRCS = ../src/core.c ../src/index.c arena.c platform.c
+PROTEUS_SRCS = ../src/core.c ../src/index.c ../src/platform-st.c arena.c platform.c
 
 # FreeRTOS Kernel Sources
 FREERTOS_SRCS = FreeRTOS-Kernel/tasks.c \

@@ -112,22 +112,22 @@ void pt_arena_init_routine(void)
 		// Bind the fork handlers AFTER the core count is published
 		pthread_atfork(pt_arena_prepare_fork, pt_arena_parent_child_fork, pt_arena_parent_child_fork);
 	} else {
-		while(0 == atomic_load_explicit(&g_pt.num_cores, memory_order_acquire)) {
-			platform_spin_pause();
-		}
+		do {
+			sched_yield();
+		} while(0 == atomic_load_explicit(&g_pt.num_cores, memory_order_acquire));
 	} 
 }
 
-void* pt_arena_watermark_release(pt_arena_t* arena, pt_superpage_t* superpage, word_t* final_hdr, word_t size_words, word_t coalesced_size)
+void* pt_arena_watermark_release(pt_arena_t* arena, pt_superpage_t* superpage, word_t* final_hdr, word_t size_words)
 {
 	/* ============================================================================
      * THE UNIFIED DIFFERENTIAL WATERMARK ADVISORY FILTER
      * ============================================================================ */
-	if (__builtin_expect(coalesced_size == PT_HUGE_THRESHOLD_WORDS, 0)) {
+	if (__builtin_expect(final_hdr[0] == PT_HUGE_THRESHOLD_WORDS, 0)) {
         // Only release the superpage if it's not the absolute last one in the tree
         if (arena->root->left || arena->root->right) { 
             // 1. Unlink from the tree first so it becomes invisible to the allocator
-            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, coalesced_size));
+            pt_idx_tree_unlink(arena, pt_idx_hdr_to_tree(final_hdr, final_hdr[0]));
             void* superpage_base = (void*)superpage;
             
             if (arena->empty_superpage_cache) { 
@@ -152,7 +152,7 @@ void* pt_arena_watermark_release(pt_arena_t* arena, pt_superpage_t* superpage, w
             }
         }
 	} else { 
-		pt_arena_watermark(arena, final_hdr, size_words, coalesced_size);
+		pt_arena_watermark(arena, final_hdr, size_words);
     }
 	return NULL;
 }

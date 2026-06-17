@@ -17,20 +17,6 @@
 #ifndef PT_ARENA_H
 #define PT_ARENA_H
 
-#include "primitives.h"
 #include "arena-st.h" // We use the single-arena layout for RTOS
-
-// The actual static SRAM chunk Proteus will manage
-extern uint8_t ucHeap[configTOTAL_HEAP_SIZE];
-
-void pt_freertos_init(void);
-
-static inline pt_arena_t* pt_arena_get_local(void) 
-{
-    if (__builtin_expect(g_pt.num_cores == 0, 0)) {
-        pt_freertos_init();
-    }
-    return g_pt.arenas;
-}
 
 #endif // PT_ARENA_H
