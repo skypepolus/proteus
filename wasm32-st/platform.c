@@ -31,17 +31,9 @@ int brk(void *addr)
 
 void *sbrk(intptr_t increment)
 {
-	if(__heap_brk + increment < &__heap_base) {
-		return NULL;
-	} else if((uint8_t*)(__builtin_wasm_memory_size(0) << 16) < __heap_brk + increment) {
-		uintptr_t delta = __heap_brk + increment - (uint8_t*)(__builtin_wasm_memory_size(0) << 16);
-		delta = (delta + PT_INDEX_WATERMARK_BYTES - 1) & ~((uintptr_t)PT_INDEX_WATERMARK_BYTES - 1);
-		if((size_t)(-1) == __builtin_wasm_memory_grow(0, delta >> 16)) {
-			return NULL;
-		}
-	}
-	__heap_brk += increment;
-	return __heap_brk;
+	if(0 == brk((void*)((uintptr_t)__heap_brk + increment)))
+		return (void*)((uintptr_t)__heap_brk - increment);
+	return NULL;
 }
 
 // Minimal bare-metal string utilities for core.c
