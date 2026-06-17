@@ -38,14 +38,9 @@ int brk(void *addr)
 
 void *sbrk(intptr_t increment)
 {
-	if(__heap_brk + increment < ucHeap) {
-		return NULL;
-	}
-	if(ucHeap + sizeof(ucHeap) < __heap_brk + increment) {
-		return NULL;
-	}
-	__heap_brk += increment;
-	return __heap_brk;
+	if(0 == brk((void*)((uintptr_t)__heap_brk + increment)))
+		return (void*)((uintptr_t)__heap_brk - increment);
+	return NULL;
 }
 
 // Provide the mandatory FreeRTOS portable allocation hooks
