@@ -89,12 +89,12 @@ void proteus_free(void* ptr)
 	#endif/*PT_SINGLE_THREAD*/
     pt_superpage_t* superpage = pt_arena_superpage(ptr);
     pt_arena_t* arena         = superpage->arena_ptr;
-    hybrid_lock(&arena->lock, FREE_SPIN_COUNTER);
+    hybrid_lock(arena->lock, FREE_SPIN_COUNTER);
 
     word_t* final_hdr = pt_idx_coalesce_state_machine(arena, hdr_ptr, hdr_ptr + size_words);
 	#ifdef PT_POSIX
 	if (pt_arena_watermark_no(final_hdr[0])) { 
-		hybrid_unlock(&arena->lock);
+		hybrid_unlock(arena->lock);
 		return;
 	} else { 
 		void* superpage_base = pt_arena_watermark_release(arena, superpage, final_hdr, size_words);
@@ -102,7 +102,7 @@ void proteus_free(void* ptr)
 		(void)superpage_base;
 		#else
 		if(superpage_base) {
-			hybrid_unlock(&arena->lock);
+			hybrid_unlock(arena->lock);
 			munmap(superpage_base, PT_SUPER_PAGE_BYTES);
 			return;
 		}
@@ -111,7 +111,7 @@ void proteus_free(void* ptr)
 	#else
 	(void)final_hdr;
 	#endif
-	hybrid_unlock(&arena->lock);
+	hybrid_unlock(arena->lock);
 }
 
 void* proteus_memalign(size_t alignment, size_t size_bytes) 
@@ -140,7 +140,7 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 		// ----------------------------------------------------------------------------
 		// PASS A: Home Arena Fast-Path
 		// ----------------------------------------------------------------------------
-		if(__builtin_expect(!hybrid_try(&arena->lock), 0)) {
+		if(__builtin_expect(!hybrid_try(arena->lock), 0)) {
 			// ----------------------------------------------------------------------------
 			// PASS B: Work-Stealing Neighbor Core Scan
 			// ----------------------------------------------------------------------------
@@ -148,13 +148,13 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 			pt_arena_t* arenas = g_pt.arenas;
 			for (i = 1, j = arena - arenas; i < num_cores; i++) {
 				arena = &arenas[(i + j) % num_cores];
-				if (hybrid_try(&arena->lock)) {
+				if (hybrid_try(arena->lock)) {
 					break;
 				}
 			}
 			if(__builtin_expect(num_cores <= i, 0)) {
 				arena = &arenas[(i + j) % num_cores];
-				hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
+				hybrid_lock(arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
 			}
 		}
 
@@ -163,7 +163,7 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 
 		if(__builtin_expect(NULL == (left_hdr = pt_core_try_segregated_alloc(arena, request_words)), 0)) {
 			if(__builtin_expect(NULL == (left_hdr = pt_core_allocate_superpage_fallback(arena, request_words)), 0)) {
-				hybrid_unlock(&arena->lock); 
+				hybrid_unlock(arena->lock); 
 				return NULL;
 			}
 		}
@@ -198,7 +198,7 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 		}
 
 		// Safely unlock before passing remnants to free(), preventing deadlocks completely
-        hybrid_unlock(&arena->lock); 
+        hybrid_unlock(arena->lock); 
         // === END OF CRITICAL SECTION ===
 
 		return (void*)aligned_payload;
@@ -323,7 +323,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 	 * ============================================================================ */
 		superpage = pt_arena_superpage(ptr);
 		arena = superpage->arena_ptr;
-		hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER);
+		hybrid_lock(arena->lock, MALLOC_SPIN_COUNTER);
 
 		hdr_ptr[0] = -target_words;
 		hdr_ptr[target_words - 1] = -target_words;
@@ -334,7 +334,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 		remainder_hdr[delta - 1] = -delta; 
 		(void)pt_idx_coalesce_state_machine(arena, remainder_hdr, remainder_hdr + delta);
 
-		hybrid_unlock(&arena->lock);
+		hybrid_unlock(arena->lock);
 
 		return ptr;
 
@@ -367,7 +367,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 		current_bytes = (-*hdr_ptr - 2) * sizeof(word_t);
 		superpage = pt_arena_superpage(ptr);
 		arena = superpage->arena_ptr;
-		hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER);
+		hybrid_lock(arena->lock, MALLOC_SPIN_COUNTER);
 
 		remainder_hdr = hdr_ptr + target_words;
 
@@ -430,10 +430,10 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 			hdr_ptr[target_words - 1] = -target_words;
 			hdr_ptr[0] = -target_words;
 
-			hybrid_unlock(&arena->lock);
+			hybrid_unlock(arena->lock);
 			return ptr;
 		}
-		hybrid_unlock(&arena->lock);
+		hybrid_unlock(arena->lock);
 		break;
 
 	case 1 * 4 + 1 * 2 + 0: // target is bigger  & target is huge     & current is not huge

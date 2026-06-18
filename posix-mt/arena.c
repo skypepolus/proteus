@@ -32,14 +32,27 @@ void pt_arena_prepare_fork(void) {
     // Acquire EVERY arena lock sequentially before the fork occurs
     for (long i = 0; i < g_pt.num_cores; i++) {
         // Use a heavy spin-to-sleep lock to ensure absolute ownership
-        hybrid_lock(&g_pt.arenas[i].lock, MALLOC_SPIN_COUNTER);
+        hybrid_lock(g_pt.arenas[i].lock, MALLOC_SPIN_COUNTER);
     }
 }
 
-void pt_arena_parent_child_fork(void) { 
+void pt_arena_parent_fork(void) { 
     for (long i = 0; i < g_pt.num_cores; i++) {
-        hybrid_unlock(&g_pt.arenas[i].lock);
+        hybrid_unlock(g_pt.arenas[i].lock);
     }
+}
+
+void pt_arena_child_fork(void) { 
+    size_t alloc_bytes = (size_t)g_pt.num_cores * sizeof(struct hybrid);
+    struct hybrid* lock_mapping = (struct hybrid*)mmap(NULL, alloc_bytes, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	if(MAP_FAILED == (void*)lock_mapping) {
+		__builtin_trap();
+	}
+    for (long i = 0; i < g_pt.num_cores; i++) {
+		pt_arena_t* arena = &g_pt.arenas[i];
+		arena->lock = &lock_mapping[i];
+		hybrid_initial(arena->lock);
+	}
 }
 
 void pt_arena_init_routine(void) 
@@ -65,15 +78,13 @@ void pt_arena_init_routine(void)
     size_t alloc_bytes = (size_t)detected_cores * sizeof(pt_arena_t);
     
     /* 3. Calculate allocation requirements */
-    void* raw_mapping = (void*)(((uintptr_t)sbrk(0) + 64 - 1) & ~((uintptr_t)64 - 1));
+    void* raw_mapping = mmap(NULL, alloc_bytes, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	if(MAP_FAILED == raw_mapping) {
+		__builtin_trap();
+	}
     
 	pt_arena_t* expected = NULL;
 	if(atomic_compare_exchange_strong(&g_pt.arenas, &expected, raw_mapping)) {
-		if(-1 == brk((void*)((uintptr_t)raw_mapping + alloc_bytes))) {
-			// Critical system failure hook: crash fast before memory corruption occurs
-			__builtin_trap(); 
-		}
-
 		/* 4. Individual Core Arena Bootstrapping Loop */
 		for (long i = 0; i < detected_cores; i++) {
 			pt_arena_t* arena = &g_pt.arenas[i];
@@ -88,7 +99,8 @@ void pt_arena_init_routine(void)
 			arena->page_mask = arena->page_size - 1;
         
 			// Construct your asymmetric hybrid-lock primitive
-			hybrid_initial(&arena->lock);
+			arena->lock = arena->hybrid;
+			hybrid_initial(arena->lock);
         
 			// Initialize your logical list sentinels to point back to themselves
 			arena->segregate[0].head.next = &arena->segregate[0].tail;
@@ -110,11 +122,12 @@ void pt_arena_init_routine(void)
 		atomic_store_explicit(&g_pt.num_cores, detected_cores, memory_order_release);
 
 		// Bind the fork handlers AFTER the core count is published
-		pthread_atfork(pt_arena_prepare_fork, pt_arena_parent_child_fork, pt_arena_parent_child_fork);
+		pthread_atfork(pt_arena_prepare_fork, pt_arena_parent_fork, pt_arena_child_fork);
 	} else {
-		do {
-			sched_yield();
-		} while(0 == atomic_load_explicit(&g_pt.num_cores, memory_order_acquire));
+		munmap(raw_mapping, alloc_bytes);
+		while(0 == atomic_load_explicit(&g_pt.num_cores, memory_order_acquire)) {
+			platform_spin_pause();
+		}
 	} 
 }
 
@@ -135,12 +148,12 @@ void* pt_arena_watermark_release(pt_arena_t* arena, pt_superpage_t* superpage, w
 				return superpage_base;
             } else {
                 // Cache is empty. Drop lock FIRST to perform the heavy system call
-                hybrid_unlock(&arena->lock); 
+                hybrid_unlock(arena->lock); 
 
 				pt_platform_purge_pages	(superpage_base, PT_SUPER_PAGE_BYTES);
 
                 // Re-acquire lock to safely publish the purged page
-                hybrid_lock(&arena->lock, FREE_SPIN_COUNTER);
+                hybrid_lock(arena->lock, FREE_SPIN_COUNTER);
 
                 if (arena->empty_superpage_cache == NULL) {
                     arena->empty_superpage_cache = superpage_base;

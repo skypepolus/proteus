@@ -12,9 +12,9 @@ word_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words
 		arena->empty_superpage_cache = NULL;
 	} else {  
 		/* --- Inside proteus_malloc's Slow-Path Page Allocation Gate --- */
-		hybrid_unlock(&arena->lock); // Drop lock so others can use the arena
+		hybrid_unlock(arena->lock); // Drop lock so others can use the arena
 		pt_arena_superpage_new(new_page); // Expensive OS call
-		hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
+		hybrid_lock(arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
 	
 		if (__builtin_expect(*new_page == NULL, 0)) {
 			return NULL;
@@ -38,9 +38,9 @@ word_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words
 		if(NULL == arena->empty_superpage_cache) {
 			arena->empty_superpage_cache = new_page[1];
 		} else {
-			hybrid_unlock(&arena->lock); // Drop lock so others can use the arena
+			hybrid_unlock(arena->lock); // Drop lock so others can use the arena
 			munmap(new_page[1], PT_SUPER_PAGE_BYTES); // Expensive OS call
-			hybrid_lock(&arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
+			hybrid_lock(arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
 		}
 	}
 	

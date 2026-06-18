@@ -56,13 +56,13 @@ void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words)
 		right_hdr[-1] *= -1;
 
 		// 3. DROP LOCK: Allow parallel allocations
-		hybrid_unlock(&arena->lock);
+		hybrid_unlock(arena->lock);
 
 		// 4. SYSCALL: Safe, unlocked page table purge
 		pt_platform_purge_pages((void*)page_start, page_end - page_start);
 
 		// 5. RE-ACQUIRE LOCK
-		hybrid_lock(&arena->lock, FREE_SPIN_COUNTER);
+		hybrid_lock(arena->lock, FREE_SPIN_COUNTER);
 
 		// 6. RE-COALESCE & RE-INSERT
 		// Because we inverted the tags to negative, we satisfy the state machine's 
