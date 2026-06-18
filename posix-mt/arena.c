@@ -42,16 +42,30 @@ void pt_arena_parent_fork(void) {
     }
 }
 
+static struct hybrid* child_lock = NULL;
+static int child_lock_count = 0;
+
 void pt_arena_child_fork(void) { 
-    size_t alloc_bytes = (size_t)g_pt.num_cores * sizeof(struct hybrid);
-    struct hybrid* lock_mapping = (struct hybrid*)mmap(NULL, alloc_bytes, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-	if(MAP_FAILED == (void*)lock_mapping) {
-		__builtin_trap();
-	}
-    for (long i = 0; i < g_pt.num_cores; i++) {
+	long i;
+    for (i = 0; i < g_pt.num_cores && 0 < child_lock_count; i++, child_lock++, child_lock_count--) {
 		pt_arena_t* arena = &g_pt.arenas[i];
-		arena->lock = &lock_mapping[i];
+		arena->lock = child_lock;
 		hybrid_initial(arena->lock);
+	}
+	if(i < g_pt.num_cores) {
+		size_t alloc_bytes = ((size_t)g_pt.num_cores - i) * sizeof(struct hybrid);
+		size_t page_mask = g_pt.arenas->page_mask;
+		size_t aligned_bytes = (alloc_bytes + page_mask) & page_mask;
+		child_lock = (struct hybrid*)mmap(NULL, aligned_bytes, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+		if(MAP_FAILED == (void*)child_lock) {
+			__builtin_trap();
+		}
+		child_lock_count = aligned_bytes / sizeof(struct hybrid);
+		for (; i < g_pt.num_cores; i++, child_lock++, child_lock_count--) {
+			pt_arena_t* arena = &g_pt.arenas[i];
+			arena->lock = child_lock;
+			hybrid_initial(arena->lock);
+		}
 	}
 }
 
@@ -115,6 +129,12 @@ void pt_arena_init_routine(void)
 			arena->empty_superpage_cache = NULL; 
 		}
 
+		size_t page_mask = g_pt.arenas->page_mask;
+		size_t aligned_bytes = (alloc_bytes + page_mask) & page_mask;
+		if(aligned_bytes - alloc_bytes > sizeof(struct hybrid) * child_lock_count) {
+			child_lock = (struct hybrid*)&g_pt.arenas[detected_cores];
+			child_lock_count = (aligned_bytes - alloc_bytes) / sizeof(struct hybrid);
+		}
 
 		// Finally, store the core count using Release semantics. 
 		// This forms a memory barrier that guarantees all preceding arena 
