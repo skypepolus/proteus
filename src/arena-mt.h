@@ -20,14 +20,11 @@
 
 // Extended core arena layout - Strictly cache-line isolated to prevent False Sharing
 typedef struct pt_arena {
-    struct hybrid hybrid[1];
+    struct hybrid parent_lock[1];
     pt_list_t segregate[2]; // Two small segregated lists
 
     struct hybrid* lock;
-	// Runtime OS Page Invariants
-    size_t page_size;   // e.g., 4096, 16384, or 65536
-    uintptr_t page_mask; // e.g., 4095, 16383, or 65535
-	uint8_t reserved0align[64 - sizeof(struct hybrid*) - sizeof(size_t) - sizeof(uintptr_t)];
+	uint8_t reserved0align[64 - sizeof(struct hybrid*)];
 
     pt_redblack_t* root;    // Augmented address-ordered First-Fit tree root
 	void* empty_superpage_cache; 
@@ -35,18 +32,21 @@ typedef struct pt_arena {
 } pt_arena_t;
 
 typedef struct pt_superpage {
-    word_t ftr[1];                                // 1 Word (Low Zero Sentinel)
-    word_t block_words[PT_HUGE_THRESHOLD_WORDS];  // PT_SUPER_PAGE_WORDS - 4 Words
-    word_t hdr[1];                                // 1 Word (High Zero Sentinel)
     pt_arena_t* arena_ptr;                        // 1 Word
-    word_t      reserved_align;                   // 1 Word (Maintained for strict 2-word header structural alignment)
+    word_t* hdr;                                  // 1 Word (High Zero Sentinel)
+    word_t ftr[1];                                // 1 Word (Low Zero Sentinel)
+    word_t block_words[1];                        // PT_SUPER_PAGE_WORDS - 4 Words
 } pt_superpage_t;
 
 typedef struct g_pt {
 	// Standard atomic int for core counting
 	_Atomic int num_cores;
-	_Atomic (pt_arena_t*) arenas;
-	uint8_t reserved_align[64 - sizeof(_Atomic int) - sizeof(pt_arena_t*)];
+	pt_arena_t* arenas;
+	// Runtime OS Page Invariants
+    size_t page_size;   // e.g., 4096, 16384, or 65536
+    uintptr_t page_mask; // e.g., 4095, 16383, or 65535
+	uint8_t reserved_align[64 - sizeof(_Atomic int) - sizeof(pt_arena_t*) - sizeof(size_t) - sizeof(uintptr_t)];
+	pthread_once_t once_control;
 } g_pt_t;
 
 #include "watermark.h"

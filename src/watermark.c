@@ -42,8 +42,8 @@ void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words)
 	uintptr_t payload_start = (uintptr_t)(final_hdr + 1);
 	uintptr_t payload_end   = (uintptr_t)node->hdr;
 	
-	uintptr_t page_start = (payload_start + arena->page_mask) & ~arena->page_mask;
-	uintptr_t page_end   = payload_end & ~arena->page_mask;
+	uintptr_t page_start = (payload_start + g_pt.page_mask) & ~g_pt.page_mask;
+	uintptr_t page_end   = payload_end & ~g_pt.page_mask;
 	
 	if (page_start < page_end) {
 		word_t* right_hdr   = final_hdr + final_hdr[0];
