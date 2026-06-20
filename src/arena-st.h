@@ -30,10 +30,6 @@ void *sbrk(intptr_t increment);
 typedef struct pt_arena {
     pt_list_t segregate[2]; // Two small segregated lists
     pt_redblack_t* root;    // Augmented address-ordered First-Fit tree root
-
-	// Runtime OS Page Invariants
-    size_t page_size;   // e.g., 4096, 16384, or 65536
-    uintptr_t page_mask; // e.g., 4095, 16383, or 65535
 } pt_arena_t;
 
 typedef struct pt_superpage {
@@ -46,6 +42,9 @@ typedef struct g_pt {
 	int num_cores;
 	pt_arena_t arenas[1];
 	pt_superpage_t superpage[1];
+	// Runtime OS Page Invariants
+    size_t page_size;   // e.g., 4096, 16384, or 65536
+    uintptr_t page_mask; // e.g., 4095, 16383, or 65535
 } g_pt_t;
 
 #include "watermark.h"
@@ -58,8 +57,8 @@ static inline pt_arena_t* pt_arena_get_local(void)
         // Slow path: Only hit once in the entire application lifetime
         pt_arena_t* arena = g_pt.arenas;
 
-		arena->page_size = sysconf(_SC_PAGESIZE);
-		arena->page_mask = arena->page_size - 1;
+		g_pt.page_size = sysconf(_SC_PAGESIZE);
+		g_pt.page_mask = g_pt.page_size - 1;
 
         // Initialize your logical list sentinels to point back to themselves
         arena->segregate[0].head.next = &arena->segregate[0].tail;

@@ -26,7 +26,7 @@
 
 #include <stdatomic.h>
 
-__attribute__((aligned(64))) g_pt_t g_pt;
+__attribute__((aligned(64))) g_pt_t g_pt = { .once_control = PTHREAD_ONCE_INIT };
 
 void pt_arena_prepare_fork(void) {
     // Acquire EVERY arena lock sequentially before the fork occurs
@@ -54,7 +54,7 @@ void pt_arena_child_fork(void) {
 	}
 	if(i < g_pt.num_cores) {
 		size_t alloc_bytes = ((size_t)g_pt.num_cores - i) * sizeof(struct hybrid);
-		size_t page_mask = g_pt.arenas->page_mask;
+		size_t page_mask = g_pt.page_mask;
 		size_t aligned_bytes = (alloc_bytes + page_mask) & page_mask;
 		child_lock = (struct hybrid*)mmap(NULL, aligned_bytes, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 		if(MAP_FAILED == (void*)child_lock) {
@@ -97,58 +97,50 @@ void pt_arena_init_routine(void)
 		__builtin_trap();
 	}
     
-	pt_arena_t* expected = NULL;
-	if(atomic_compare_exchange_strong(&g_pt.arenas, &expected, raw_mapping)) {
-		/* 4. Individual Core Arena Bootstrapping Loop */
-		for (long i = 0; i < detected_cores; i++) {
-			pt_arena_t* arena = &g_pt.arenas[i];
-
-			if (__builtin_expect(os_page_size <= 0, 0)) {
-				arena->page_size = PT_DEFAULT_PAGE_BYTES;
-			} else {
-				arena->page_size = (size_t)os_page_size;
-			}
-
-			// Compute the bitwise alignment mask (e.g., 4096 - 1 = 4095)
-			arena->page_mask = arena->page_size - 1;
-        
-			// Construct your asymmetric hybrid-lock primitive
-			arena->lock = arena->hybrid;
-			hybrid_initial(arena->lock);
-        
-			// Initialize your logical list sentinels to point back to themselves
-			arena->segregate[0].head.next = &arena->segregate[0].tail;
-			arena->segregate[0].tail.prev = &arena->segregate[0].head;
-			
-			arena->segregate[1].head.next = &arena->segregate[1].tail;
-			arena->segregate[1].tail.prev = &arena->segregate[1].head;
-        
-			// Tree begins completely clear
-			arena->root = NULL;
-
-			arena->empty_superpage_cache = NULL; 
-		}
-
-		size_t page_mask = g_pt.arenas->page_mask;
-		size_t aligned_bytes = (alloc_bytes + page_mask) & page_mask;
-		if(aligned_bytes - alloc_bytes > sizeof(struct hybrid) * child_lock_count) {
-			child_lock = (struct hybrid*)&g_pt.arenas[detected_cores];
-			child_lock_count = (aligned_bytes - alloc_bytes) / sizeof(struct hybrid);
-		}
-
-		// Finally, store the core count using Release semantics. 
-		// This forms a memory barrier that guarantees all preceding arena 
-		// configurations are fully visible to any thread reading via Acquire.
-		atomic_store_explicit(&g_pt.num_cores, detected_cores, memory_order_release);
-
-		// Bind the fork handlers AFTER the core count is published
-		pthread_atfork(pt_arena_prepare_fork, pt_arena_parent_fork, pt_arena_child_fork);
+	g_pt.arenas = raw_mapping;	
+	if (__builtin_expect(os_page_size <= 0, 0)) {
+		g_pt.page_size = PT_DEFAULT_PAGE_BYTES;
 	} else {
-		munmap(raw_mapping, alloc_bytes);
-		while(0 == atomic_load_explicit(&g_pt.num_cores, memory_order_acquire)) {
-			platform_spin_pause();
-		}
-	} 
+		g_pt.page_size = (size_t)os_page_size;
+	}
+	// Compute the bitwise alignment mask (e.g., 4096 - 1 = 4095)
+	g_pt.page_mask = g_pt.page_size - 1;
+
+	/* 4. Individual Core Arena Bootstrapping Loop */
+	for (long i = 0; i < detected_cores; i++) {
+		pt_arena_t* arena = &g_pt.arenas[i];
+	
+		// Construct your asymmetric hybrid-lock primitive
+		arena->lock = arena->parent_lock;
+		hybrid_initial(arena->lock);
+	
+		// Initialize your logical list sentinels to point back to themselves
+		arena->segregate[0].head.next = &arena->segregate[0].tail;
+		arena->segregate[0].tail.prev = &arena->segregate[0].head;
+		
+		arena->segregate[1].head.next = &arena->segregate[1].tail;
+		arena->segregate[1].tail.prev = &arena->segregate[1].head;
+	
+		// Tree begins completely clear
+		arena->root = NULL;
+
+		arena->empty_superpage_cache = NULL; 
+	}
+
+	size_t page_mask = g_pt.page_mask;
+	size_t aligned_bytes = (alloc_bytes + page_mask) & page_mask;
+	if(aligned_bytes - alloc_bytes > sizeof(struct hybrid) * child_lock_count) {
+		child_lock = (struct hybrid*)&g_pt.arenas[detected_cores];
+		child_lock_count = (aligned_bytes - alloc_bytes) / sizeof(struct hybrid);
+	}
+
+	// Finally, store the core count using Release semantics. 
+	// This forms a memory barrier that guarantees all preceding arena 
+	// configurations are fully visible to any thread reading via Acquire.
+	atomic_store_explicit(&g_pt.num_cores, detected_cores, memory_order_release);
+
+	// Bind the fork handlers AFTER the core count is published
+	pthread_atfork(pt_arena_prepare_fork, pt_arena_parent_fork, pt_arena_child_fork);
 }
 
 void* pt_arena_watermark_release(pt_arena_t* arena, pt_superpage_t* superpage, word_t* final_hdr, word_t size_words)

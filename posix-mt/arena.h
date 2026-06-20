@@ -32,7 +32,7 @@ static inline pt_arena_t* pt_arena_get_local(void)
     
     if (__builtin_expect(cores == 0, 0)) {
         // Slow path: Only hit once in the entire application lifetime
-		pt_arena_init_routine();
+		pthread_once(&g_pt.once_control, pt_arena_init_routine);
 		cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire);
     }
 

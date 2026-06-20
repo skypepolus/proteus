@@ -101,11 +101,11 @@ PT_EXPORT void* aligned_alloc(size_t alignment, size_t size) {
 }
 
 PT_EXPORT void* valloc(size_t size) {
-	pt_arena_t* arena = pt_arena_get_local();
-	return memalign(arena->page_size, size);
+	pt_arena_get_local();
+	return memalign(g_pt.page_size, size);
 }
 
 PT_EXPORT void* pvalloc(size_t size) {
-	pt_arena_t* arena = pt_arena_get_local();
-	return memalign(arena->page_size , (size + arena->page_mask) & ~arena->page_mask);
+	pt_arena_get_local();
+	return memalign(g_pt.page_size , (size + g_pt.page_mask) & ~g_pt.page_mask);
 }
