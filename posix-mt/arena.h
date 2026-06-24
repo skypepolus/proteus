@@ -83,7 +83,9 @@ static inline pt_arena_t* pt_arena_get_local(void)
     if (__builtin_expect(cores == 0, 0)) {
         // Slow path: Only hit once in the entire application lifetime
 		pthread_once(&pt_once_control, pt_arena_init_routine);
-		cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire);
+		while(0 == (cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire))) {
+			platform_spin_pause();
+		}
     }
 
     return &g_pt.arenas[get_proteus_arena_id(cores)];
