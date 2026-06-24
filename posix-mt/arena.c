@@ -17,6 +17,7 @@
 #include "core.h"
 #include "index.h"
 #include "posix.h"
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -26,7 +27,9 @@
 
 #include <stdatomic.h>
 
-__attribute__((aligned(64))) g_pt_t g_pt = { .once_control = PTHREAD_ONCE_INIT };
+__attribute__((aligned(64))) g_pt_t g_pt; 
+
+__attribute__((aligned(64))) pthread_once_t pt_once_control = PTHREAD_ONCE_INIT;
 
 void pt_arena_prepare_fork(void) {
     // Acquire EVERY arena lock sequentially before the fork occurs
@@ -72,7 +75,43 @@ void pt_arena_child_fork(void) {
 void pt_arena_init_routine(void) 
 {
 	// Dynamically query the host kernel for its native virtual memory page size
-    long os_page_size = sysconf(_SC_PAGESIZE);
+    uintptr_t os_page_size = sysconf(_SC_PAGESIZE);
+
+	if (__builtin_expect(os_page_size <= 0, 0)) {
+		g_pt.page_size = PT_DEFAULT_PAGE_BYTES;
+	} else {
+		g_pt.page_size = (size_t)os_page_size;
+	}
+	// Compute the bitwise alignment mask (e.g., 4096 - 1 = 4095)
+	g_pt.page_mask = g_pt.page_size - 1;
+
+	// Environmental Variables
+	char* malloc_spin = getenv("PROTEUS_MALLOC_SPIN");
+	if(malloc_spin) {
+		g_pt.malloc_spin = strtoul(malloc_spin, NULL, 10);
+	} else {
+		g_pt.malloc_spin = DEFAULT_MALLOC_SPIN_COUNTER;
+	}
+
+	char* superpage_bytes = getenv("PROTEUS_SUPERPAGE_BYTES");
+	if(superpage_bytes ) {
+		g_pt.superpage_bytes = next_power_of_2(strtoul(superpage_bytes, NULL, 10));
+	} else {
+		g_pt.superpage_bytes = PT_DEFAULT_SUPER_PAGE_BYTES;
+	}
+	g_pt.superpage_bytes = g_pt.superpage_bytes < os_page_size ? os_page_size : g_pt.superpage_bytes;
+	g_pt.superpage_mask = g_pt.superpage_bytes - 1;
+	g_pt.superpage_words = g_pt.superpage_bytes / sizeof(word_t);
+
+	char* watermark_bytes = getenv("PROTEUS_WATERMARK_BYTES");
+	if(watermark_bytes) {
+		g_pt.watermark_bytes = ((uintptr_t)strtoul(watermark_bytes, NULL, 10) + g_pt.page_mask) & g_pt.page_mask;
+	} else {
+		g_pt.watermark_bytes = PT_DEFAULT_INDEX_WATERMARK_BYTES;
+	}
+	g_pt.watermark_bytes = g_pt.watermark_bytes < os_page_size * 2 ? os_page_size * 2 : g_pt.watermark_bytes;
+	g_pt.watermark_mask = g_pt.watermark_bytes - 1;
+	g_pt.watermark_words = g_pt.watermark_bytes / sizeof(word_t);
 
     /* 1. Detect active hardware CPU core boundaries */
 #if defined(__APPLE__)
@@ -98,13 +137,6 @@ void pt_arena_init_routine(void)
 	}
     
 	g_pt.arenas = raw_mapping;	
-	if (__builtin_expect(os_page_size <= 0, 0)) {
-		g_pt.page_size = PT_DEFAULT_PAGE_BYTES;
-	} else {
-		g_pt.page_size = (size_t)os_page_size;
-	}
-	// Compute the bitwise alignment mask (e.g., 4096 - 1 = 4095)
-	g_pt.page_mask = g_pt.page_size - 1;
 
 	/* 4. Individual Core Arena Bootstrapping Loop */
 	for (long i = 0; i < detected_cores; i++) {
