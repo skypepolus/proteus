@@ -39,6 +39,7 @@ $(TARGET_BENCH_A): $(OBJS_BENCH)
 	@echo "[Proteus Build]: Created Benchmark Static Archive -> $(TARGET_BENCH_A)"
 
 src/%.bench.o: ../src/%.c
+	mkdir -p src
 	$(CC) $(CFLAGS) -Os -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
 
 %.bench.o: %.c
@@ -58,10 +59,10 @@ $(TARGET_DEBUG_A): $(OBJS_DEBUG)
 	@echo "[Proteus Build]: Created Debugging Static Archive  -> $(TARGET_DEBUG_A)"
 
 src/%.debug.o: ../src/%.c
-	$(CC) $(CFLAGS) -g -O0 -DDEBUG -DPT_SUPER_PAGE_BYTES=4194304 $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -g -O0 -DDEBUG -DPT_DEFAULT_SUPER_PAGE_BYTES=4194304 $(INCLUDES) -c $< -o $@
 
 %.debug.o: %.c
-	$(CC) $(CFLAGS) -g -O0 -DDEBUG -DPT_SUPER_PAGE_BYTES=4194304 $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -g -O0 -DDEBUG -DPT_DEFAULT_SUPER_PAGE_BYTES=4194304 $(INCLUDES) -c $< -o $@
 
 # ----------------------------------------------------------------------------
 # Clean Build Environment

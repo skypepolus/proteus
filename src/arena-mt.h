@@ -38,6 +38,8 @@ typedef struct pt_superpage {
     word_t block_words[1];                        // PT_SUPER_PAGE_WORDS - 4 Words
 } pt_superpage_t;
 
+pthread_once_t pt_once_control;
+
 typedef struct g_pt {
 	// Standard atomic int for core counting
 	_Atomic int num_cores;
@@ -45,8 +47,13 @@ typedef struct g_pt {
 	// Runtime OS Page Invariants
     size_t page_size;   // e.g., 4096, 16384, or 65536
     uintptr_t page_mask; // e.g., 4095, 16383, or 65535
-	uint8_t reserved_align[64 - sizeof(_Atomic int) - sizeof(pt_arena_t*) - sizeof(size_t) - sizeof(uintptr_t)];
-	pthread_once_t once_control;
+	int malloc_spin;		// PROTEUS_MALLOC_SPIN
+	uintptr_t superpage_bytes; // PROTEUS_SUPERPAGE_BYTES
+	uintptr_t superpage_mask;
+	word_t superpage_words;
+	uintptr_t watermark_bytes;	// PROTEUS_WATERMARK_BYTES
+	uintptr_t watermark_mask;
+	word_t watermark_words;
 } g_pt_t;
 
 #include "watermark.h"
