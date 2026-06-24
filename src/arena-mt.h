@@ -38,7 +38,7 @@ typedef struct pt_superpage {
     word_t block_words[1];                        // PT_SUPER_PAGE_WORDS - 4 Words
 } pt_superpage_t;
 
-pthread_once_t pt_once_control;
+extern pthread_once_t pt_once_control;
 
 typedef struct g_pt {
 	// Standard atomic int for core counting

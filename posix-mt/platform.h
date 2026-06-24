@@ -17,7 +17,7 @@
 #define __platform_h__ __platform_h__
 
 #ifndef PT_DEFAULT_SUPER_PAGE_BYTES
-#define PT_DEFAULT_SUPER_PAGE_BYTES      ((word_t)1 * 1024 * 1024 * 1024) // 4 GiB Default
+#define PT_DEFAULT_SUPER_PAGE_BYTES      ((word_t)4 * 1024 * 1024 * 1024) // 4 GiB Default
 #endif
 
 #define PT_SUPER_PAGE_BYTES	g_pt.superpage_bytes 

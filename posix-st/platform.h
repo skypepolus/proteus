@@ -25,5 +25,6 @@
 #define PT_SUPER_PAGE_WORDS      ((word_t)(UINTPTR_MAX / PT_WORD_SIZE_BYTES))
 
 #define PT_INDEX_WATERMARK_BYTES	(64 * 1024)
+#define PT_INDEX_WATERMARK_WORDS    ((word_t)(PT_INDEX_WATERMARK_BYTES / sizeof(word_t)))
 
 #endif/*__platform_h__*/
