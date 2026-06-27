@@ -24,6 +24,7 @@ word_t* pt_core_allocate_superpage_fallback(pt_arena_t* arena, word_t size_words
 	// This structural initialization must ONLY happen for a newly minted page
 	(*new_page)->arena_ptr = arena;
 	(*new_page)->ftr[0]    = 0; // Low Zero Sentinel
+	(*new_page)->hdr = (word_t*)((uintptr_t)*new_page + PT_SUPER_PAGE_BYTES) - 1;
 	(*new_page)->hdr[0]    = 0; // High Zero Sentinel
 	
 	word_t* huge_hdr  = &(*new_page)->block_words[0];

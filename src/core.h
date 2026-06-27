@@ -19,7 +19,8 @@
 #include "primitives.h"
 
 // Tuned synchronization thresholds derived from our concurrency model
-#define MALLOC_SPIN_COUNTER	500
+#define DEFAULT_MALLOC_SPIN_COUNTER	500
+#define MALLOC_SPIN_COUNTER	g_pt.malloc_spin
 #define FREE_SPIN_COUNTER	250
 
 /* ============================================================================

@@ -226,8 +226,8 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
     word_t* hdr_ptr = (word_t*)aligned_payload - 1;
 
     // Calculate the sizes of our excess prefix and suffix fragments
-    size_t prefix_trim = ((uintptr_t)(hdr_ptr - 2) & ~arena->page_mask) - (uintptr_t)mmap_base;
-    size_t suffix_trim = (uintptr_t)mmap_base + total_mmap_bytes - (((uintptr_t)aligned_payload + size_bytes + arena->page_mask) & ~arena->page_mask);
+    size_t prefix_trim = ((uintptr_t)(hdr_ptr - 2) & ~g_pt.page_mask) - (uintptr_t)mmap_base;
+    size_t suffix_trim = (uintptr_t)mmap_base + total_mmap_bytes - (((uintptr_t)aligned_payload + size_bytes + g_pt.page_mask) & ~g_pt.page_mask);
 
     // Release the unaligned prefix back to the kernel
     if (prefix_trim > 0) {
@@ -252,21 +252,6 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 
     return (void*)aligned_payload;
 	#endif/*PT_SINGLE_THREAD*/
-}
-
-static inline uintptr_t next_power_of_2(uintptr_t n) {
-	switch(n) {
-	case 0:
-	case 1:
-		return n;
-	default:
-		if (sizeof(uintptr_t) == 8) {
-			return (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clzll(n - 1));// Uses 64-bit built-in 
-		} else {
-			return (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clz(n - 1));	// Uses 32-bit built-in 
-		}
-	}
-	return 0;
 }
 
 static inline size_t PT_HUGE_PAYLOAD_BYTES(word_t* hdr_ptr) {
@@ -351,7 +336,7 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
      * ============================================================================ */
 		current_bytes = PT_HUGE_PAYLOAD_BYTES(hdr_ptr);
 		arena = pt_arena_get_local();
-		size_t suffix_trim = (uintptr_t)ptr + current_bytes - (((uintptr_t)ptr + next_bytes + arena->page_size - 1) & arena->page_mask);
+		size_t suffix_trim = (uintptr_t)ptr + current_bytes - (((uintptr_t)ptr + next_bytes + g_pt.page_size - 1) & g_pt.page_mask);
 		
 		// Release the unaligned suffix back to the kernel
 		if (suffix_trim > 0) {

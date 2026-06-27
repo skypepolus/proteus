@@ -24,6 +24,56 @@
 
 void pt_arena_init_routine(void);
 
+#ifdef __APPLE__
+    #if defined(__aarch64__)
+        // ---------------------------------------------------------
+        // Apple Silicon (M-Series) Fast-Path
+        // Reads the Thread ID Register. Executes in ~1 cycle.
+        // ---------------------------------------------------------
+        static inline int get_proteus_arena_id(int max_arenas) {
+            uint64_t tpidrro;
+            __asm__ volatile ("mrs %0, tpidrro_el0" : "=r" (tpidrro));
+            return (int)(tpidrro & 0xFF) % max_arenas;
+        }
+
+    #elif defined(__x86_64__)
+        // ---------------------------------------------------------
+        // Intel Mac (x86_64) Path
+        // Uses CPUID to fetch the Local APIC ID.
+        // ---------------------------------------------------------
+        static inline int get_proteus_arena_id(int max_arenas) {
+            uint32_t eax = 1, ebx, ecx, edx;
+            
+            // Execute CPUID with EAX=1 to get processor info
+            __asm__ volatile (
+                "cpuid"
+                : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                : "0"(eax)
+            );
+            
+            // The initial APIC ID is stored in the highest 8 bits of EBX (bits 24-31)
+            int core_id = (ebx >> 24) & 0xFF;
+            return core_id % max_arenas;
+        }
+
+    #else
+        // Fallback for unknown Apple architectures
+        #include <pthread.h>
+        static inline int get_proteus_arena_id(int max_arenas) {
+            uint64_t tid;
+            pthread_threadid_np(NULL, &tid);
+            return (int)(tid % max_arenas);
+        }
+    #endif
+
+#else
+    // Standard Linux hardware sharding
+    #include <sched.h>
+    static inline int get_proteus_arena_id(int max_arenas) {
+        return sched_getcpu() % max_arenas;
+    }
+#endif
+
 static inline pt_arena_t* pt_arena_get_local(void) 
 {
     // 1. Read the core count using a lightweight Acquire memory order.
@@ -32,20 +82,13 @@ static inline pt_arena_t* pt_arena_get_local(void)
     
     if (__builtin_expect(cores == 0, 0)) {
         // Slow path: Only hit once in the entire application lifetime
-		pt_arena_init_routine();
-		cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire);
+		pthread_once(&pt_once_control, pt_arena_init_routine);
+		while(0 == (cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire))) {
+			platform_spin_pause();
+		}
     }
 
-    uint64_t routing_id;
-#if defined(__APPLE__)
-    // XNU Fast-Path: NULL bypasses the pthread_self() lookup layer
-    pthread_threadid_np(NULL, &routing_id);
-#else
-	// Linux / Generic POSIX Fast-Path via vDSO
-    routing_id = (uint64_t)sched_getcpu();
-#endif
-
-    return &g_pt.arenas[routing_id % cores];
+    return &g_pt.arenas[get_proteus_arena_id(cores)];
 }
 
 static inline void pt_arena_superpage_new(pt_superpage_t* new_page[2]) 

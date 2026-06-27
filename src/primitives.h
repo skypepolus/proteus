@@ -40,11 +40,6 @@ typedef intptr_t word_t;
 
 #define PT_HUGE_THRESHOLD_WORDS  (PT_SUPER_PAGE_WORDS - 4)
 
-#define PT_INDEX_WATERMARK_MASK		(PT_INDEX_WATERMARK_BYTES - 1)
-
-// Watermark threshold for the Unified Differential Filter 
-#define PT_INDEX_WATERMARK_WORDS     ((word_t)((PT_INDEX_WATERMARK_BYTES) / sizeof(word_t)))
-
 // Default fallback page dimensions if runtime detection isn't stored locally
 #define PT_DEFAULT_PAGE_BYTES        4096
 
@@ -82,5 +77,20 @@ typedef struct pt_redblack {
     word_t right_max;
     word_t ftr[1];              // Maps to the physical footer at (hdr_ptr + size - 1)
 } __attribute__((aligned(8))) pt_redblack_t;
+
+static inline uintptr_t next_power_of_2(uintptr_t n) {
+	switch(n) {
+	case 0:
+	case 1:
+		return n;
+	default:
+		if (sizeof(uintptr_t) == 8) {
+			return (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clzll(n - 1));// Uses 64-bit built-in 
+		} else {
+			return (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clz(n - 1));	// Uses 32-bit built-in 
+		}
+	}
+	return 0;
+}
 
 #endif // PT_PRIMITIVES_H
