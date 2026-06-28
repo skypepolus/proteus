@@ -1,14 +1,30 @@
 # ============================================================================
-# Proteus Quad-Target Shared Object & Static Archive Build Symtem (GCC Edition)
+# Proteus Quad-Target Shared Object & Static Archive Build System
 # ============================================================================
 
-CC       = gcc
 CFLAGS   = -Wall -Wextra -std=c11 -fPIC -D_GNU_SOURCE -DPT_POSIX -Wno-implicit-fallthrough -pthread
 INCLUDES = -I. -I../include -I../src -I../deps/hybrid-lock/include
 
-# Dynamic Shared Object Targets
-TARGET_BENCH_SO = libproteus-mt.so
-TARGET_DEBUG_SO = libproteus-mt-debug.so
+# ----------------------------------------------------------------------------
+# OS Detection & Platform-Specific Flags
+# ----------------------------------------------------------------------------
+UNAME_S := $(shell uname -s)
+
+ifeq ($(UNAME_S),Darwin)
+    # macOS settings
+	CC          = clang
+    SHARED_EXT  = dylib
+    SHARED_FLAG = -dynamiclib
+else
+    # Linux default settings
+	CC          = gcc
+    SHARED_EXT  = so
+    SHARED_FLAG = -shared
+endif
+
+# Dynamic Shared Object Targets (Auto-selecting extension)
+TARGET_BENCH_SO = libproteus-mt.$(SHARED_EXT)
+TARGET_DEBUG_SO = libproteus-mt-debug.$(SHARED_EXT)
 
 # Static Archive Targets
 TARGET_BENCH_A  = libproteus-mt.a
@@ -22,16 +38,16 @@ OBJS_DEBUG = $(SRCS:../src/%.c=src/%.debug.o) $(PRTS:%.c=%.debug.o)
 
 .PHONY: all bench debug clean init-deps
 
-# Default action builds all dynamic and mtatic profiles simultaneously
+# Default action builds all dynamic and static profiles simultaneously
 all: bench debug
 
 # ----------------------------------------------------------------------------
-# Profile 1: Benchmark / Production Engine (-Os, Hidden Internals)
+# Profile 1: Benchmark / Production Engine (-O3, Hidden Internals)
 # ----------------------------------------------------------------------------
 bench: $(TARGET_BENCH_SO) $(TARGET_BENCH_A)
 
 $(TARGET_BENCH_SO): $(OBJS_BENCH)
-	$(CC) -shared -Os -flto -fno-strict-aliasing $(OBJS_BENCH) -o $(TARGET_BENCH_SO)
+	$(CC) $(SHARED_FLAG) -O3 -flto -fno-strict-aliasing $(OBJS_BENCH) -o $(TARGET_BENCH_SO)
 	@echo "[Proteus Build]: Created Benchmark Shared Object -> $(TARGET_BENCH_SO)"
 
 $(TARGET_BENCH_A): $(OBJS_BENCH)
@@ -40,10 +56,10 @@ $(TARGET_BENCH_A): $(OBJS_BENCH)
 
 src/%.bench.o: ../src/%.c
 	mkdir -p src
-	$(CC) $(CFLAGS) -Os -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -O3 -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
 
 %.bench.o: %.c
-	$(CC) $(CFLAGS) -Os -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -O3 -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
 
 # ----------------------------------------------------------------------------
 # Profile 2: High-Visibility Debug Engine (-g, -O0, Full GDB Access, No Interpose)
@@ -51,7 +67,7 @@ src/%.bench.o: ../src/%.c
 debug: $(TARGET_DEBUG_SO) $(TARGET_DEBUG_A)
 
 $(TARGET_DEBUG_SO): $(OBJS_DEBUG)
-	$(CC) -shared -g -O0 $(OBJS_DEBUG) -o $(TARGET_DEBUG_SO)
+	$(CC) $(SHARED_FLAG) -g -O0 $(OBJS_DEBUG) -o $(TARGET_DEBUG_SO)
 	@echo "[Proteus Build]: Created Debugging Shared Object -> $(TARGET_DEBUG_SO)"
 
 $(TARGET_DEBUG_A): $(OBJS_DEBUG)
@@ -68,5 +84,5 @@ src/%.debug.o: ../src/%.c
 # Clean Build Environment
 # ----------------------------------------------------------------------------
 clean:
-	rm -f *.o src/*.o *.so *.a
+	rm -f *.o src/*.o *.so *.dylib *.a
 	@echo "[Proteus Clean]: Build footprints cleared successfully."
