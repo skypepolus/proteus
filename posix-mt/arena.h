@@ -36,7 +36,7 @@ void pt_arena_init_routine(void);
             return (int)(tpidrro & 0xFF) % max_arenas;
         }
 
-    #elif defined(__x86_64__)
+    #elif 0
         // ---------------------------------------------------------
         // Intel Mac (x86_64) Path
         // Uses CPUID to fetch the Local APIC ID.
