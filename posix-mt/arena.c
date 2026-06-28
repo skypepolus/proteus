@@ -115,12 +115,10 @@ void pt_arena_init_routine(void)
 
     /* 1. Detect active hardware CPU core boundaries */
 #if defined(__APPLE__)
-    int nm[2] = {CTL_HW, HW_AVAILCPU};
     uint32_t count = 0;
     size_t len = sizeof(count);
-    if (sysctl(nm, 2, &count, &len, NULL, 0) == -1 || count < 1) {
-        count = 1; // Fallback bound
-    }
+	// Get logical core count (Includes Hyper-Threading threads)
+    sysctlbyname("hw.logicalcpu", &count, &len, NULL, 0);
     int detected_cores = (long)count;
 #else
     int detected_cores = sysconf(_SC_NPROCESSORS_ONLN);

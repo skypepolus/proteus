@@ -36,26 +36,25 @@ void pt_arena_init_routine(void);
             return (int)(tpidrro & 0xFF) % max_arenas;
         }
 
-    #elif 0
+    #elif defined(__x86_64__)
         // ---------------------------------------------------------
         // Intel Mac (x86_64) Path
         // Uses CPUID to fetch the Local APIC ID.
         // ---------------------------------------------------------
         static inline int get_proteus_arena_id(int max_arenas) {
-            uint32_t eax = 1, ebx, ecx, edx;
-            
-            // Execute CPUID with EAX=1 to get processor info
-            __asm__ volatile (
-                "cpuid"
-                : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                : "0"(eax)
-            );
-            
-            // The initial APIC ID is stored in the highest 8 bits of EBX (bits 24-31)
-            int core_id = (ebx >> 24) & 0xFF;
-            return core_id % max_arenas;
-        }
+			uint32_t eax = 0x0B; // Extended Topology Leaf (can also use 0x1F)
+			uint32_t ecx = 0;    // Sub-leaf 0
+			uint32_t ebx, edx;
 
+			__asm__ volatile (
+				"cpuid"
+				: "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+				: "a"(eax), "c"(ecx)
+			);
+
+			// EDX contains the 32-bit x2APIC ID of the current logical core
+            return edx % max_arenas;
+        }
     #else
         // Fallback for unknown Apple architectures
         #include <pthread.h>
