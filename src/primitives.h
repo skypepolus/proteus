@@ -61,11 +61,7 @@ typedef struct pt_link {
 typedef struct pt_list {
     pt_link_t head;
     pt_link_t tail;
-} 
-#ifndef PT_SINGLE_THREAD
-__attribute__((aligned(64)))
-#endif
-pt_list_t;
+} pt_list_t;
 
 typedef struct pt_redblack {
     word_t hdr[1];              // Localized per-node differential watermark vector tracker
