@@ -26,7 +26,8 @@
 void *memcpy(void *dest, const void *src, size_t n);
 #endif
 
-static inline word_t* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_words) {
+static inline word_t* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_words) 
+{
 
 	pt_link_t* head, *tail;
 	switch((unsigned)size_words >> 1) {
@@ -65,6 +66,44 @@ static inline word_t* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t siz
     return NULL; // List caches are fully depleted for these tiers
 }
 
+static inline void* pt_core_free(pt_arena_t* arena, pt_superpage_t* superpage, word_t* hdr_ptr, word_t size_words)
+{
+    word_t* final_hdr = pt_idx_coalesce_state_machine(arena, hdr_ptr, hdr_ptr + size_words);
+	#ifdef PT_POSIX
+	if (pt_arena_watermark_no(final_hdr[0])) { 
+		return NULL;
+	} else { 
+		return pt_arena_watermark_release(arena, superpage, final_hdr, size_words);
+	}
+	#else
+	(void)final_hdr;
+	#endif
+	return NULL;
+}
+#ifndef PT_SINGLE_THREAD
+static inline void pt_core_lockless_free(pt_arena_t* arena)
+{
+	void** lockless;
+	for(lockless = atomic_load_explicit(&arena->lockless, memory_order_relaxed);
+		!atomic_compare_exchange_strong_explicit(&arena->lockless, &lockless, NULL, memory_order_seq_cst, memory_order_relaxed); 
+		lockless = atomic_load_explicit(&arena->lockless, memory_order_relaxed)) {
+		platform_spin_pause();
+	}
+	while(lockless) {
+		void** next = (void**)*lockless;
+		word_t* hdr_ptr = (word_t*)lockless - 1;
+		word_t size_words = -*hdr_ptr;
+		pt_superpage_t* superpage = pt_arena_superpage((void*)lockless);
+		void* superpage_base = pt_core_free(arena, superpage, hdr_ptr, size_words);
+		if((superpage_base)) {
+			hybrid_unlock(arena->lock);
+			munmap(superpage_base, PT_SUPER_PAGE_BYTES);
+			hybrid_lock(arena->lock, FREE_SPIN_COUNTER);
+		}
+		lockless = next;
+	}
+}
+#endif
 void proteus_free(void* ptr) 
 {
     if (__builtin_expect(ptr == NULL, 0)) return;
@@ -89,29 +128,36 @@ void proteus_free(void* ptr)
 	#endif/*PT_SINGLE_THREAD*/
     pt_superpage_t* superpage = pt_arena_superpage(ptr);
     pt_arena_t* arena         = superpage->arena_ptr;
-    hybrid_lock(arena->lock, FREE_SPIN_COUNTER);
-
-    word_t* final_hdr = pt_idx_coalesce_state_machine(arena, hdr_ptr, hdr_ptr + size_words);
-	#ifdef PT_POSIX
-	if (pt_arena_watermark_no(final_hdr[0])) { 
-		hybrid_unlock(arena->lock);
-		return;
-	} else { 
-		void* superpage_base = pt_arena_watermark_release(arena, superpage, final_hdr, size_words);
-		#ifdef PT_SINGLE_THREAD
-		(void)superpage_base;
-		#else
-		if(superpage_base) {
+	if(pt_arena_get_local() == arena) {
+		hybrid_lock(arena->lock, FREE_SPIN_COUNTER);
+		#ifndef PT_SINGLE_THREAD
+		if(__builtin_expect(NULL != arena->lockless, 0)) {
+			pt_core_lockless_free(arena);
+		}
+		#endif
+		void* superpage_base = pt_core_free(arena, superpage, hdr_ptr, size_words);
+		#ifdef PT_POSIX
+		if((superpage_base)) {
 			hybrid_unlock(arena->lock);
 			munmap(superpage_base, PT_SUPER_PAGE_BYTES);
-			return;
+		} else {
+		#else
+			(void)superpage_base;
+		#endif
+			hybrid_unlock(arena->lock);
+		#ifdef PT_POSIX
+		}
+		#endif
+	} else {
+		#ifndef PT_SINGLE_THREAD
+		void** lockless;
+		for(lockless = (void**)ptr, *lockless = (void*)atomic_load_explicit(&arena->lockless, memory_order_relaxed);
+			!atomic_compare_exchange_strong_explicit(&arena->lockless, &*lockless, lockless, memory_order_seq_cst, memory_order_relaxed); 
+			*lockless = (void*)atomic_load_explicit(&arena->lockless, memory_order_relaxed)) {
+			platform_spin_pause();
 		}
 		#endif/*PT_SINGLE_THREAD*/
 	}
-	#else
-	(void)final_hdr;
-	#endif
-	hybrid_unlock(arena->lock);
 }
 
 void* proteus_memalign(size_t alignment, size_t size_bytes) 
@@ -157,7 +203,11 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 				hybrid_lock(arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
 			}
 		}
-
+		#ifndef PT_SINGLE_THREAD
+		if(__builtin_expect(NULL != arena->lockless, 0)) {
+			pt_core_lockless_free(arena);
+		}
+		#endif
         // 1. Allocate a raw block large enough from the arena
 		word_t* left_hdr;
 
@@ -309,7 +359,11 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 		superpage = pt_arena_superpage(ptr);
 		arena = superpage->arena_ptr;
 		hybrid_lock(arena->lock, MALLOC_SPIN_COUNTER);
-
+		#ifndef PT_SINGLE_THREAD
+		if(__builtin_expect(pt_arena_get_local() == arena && NULL != arena->lockless, 0)) {
+			pt_core_lockless_free(arena);
+		}
+		#endif
 		hdr_ptr[0] = -target_words;
 		hdr_ptr[target_words - 1] = -target_words;
 
@@ -353,7 +407,11 @@ void* proteus_realloc(void* ptr, size_t size_bytes)
 		superpage = pt_arena_superpage(ptr);
 		arena = superpage->arena_ptr;
 		hybrid_lock(arena->lock, MALLOC_SPIN_COUNTER);
-
+		#ifndef PT_SINGLE_THREAD
+		if(__builtin_expect(pt_arena_get_local() == arena && NULL != arena->lockless, 0)) {
+			pt_core_lockless_free(arena);
+		}
+		#endif
 		remainder_hdr = hdr_ptr + target_words;
 
 		word_t* right_hdr = hdr_ptr + current_words;
