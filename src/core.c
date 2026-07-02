@@ -54,7 +54,6 @@ static inline word_t* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t siz
         if (head->next != tail) {
             return pt_idx_link_to_hdr(head->next, 6);
         }
-	case 4:
     /* --------------------------------------------------------------------
      * LANE B: TARGET IS 8 WORDS (64 BYTES)
      * -------------------------------------------------------------------- */
@@ -187,7 +186,6 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 				(word_t*)aligned_payload - 1 + PT_TOTAL_BLOCK_WORDS(size_bytes),
 				left_hdr + left_hdr[0]);
 			break;
-		case 4:
 		default:
 			pt_idx_tree_split_state_machine(arena,
 				left_hdr, 

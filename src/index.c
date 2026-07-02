@@ -158,7 +158,6 @@ word_t* pt_idx_coalesce_state_machine(pt_arena_t* arena, word_t* final_hdr, word
             pt_idx_list_add(arena, final_hdr, final_size);
             break;
             
-        case 4:
         default:
             // Size 8 and all larger tree tiers flow uniformly into our address-ordered index.
             // Historical vector markers (node->hdr[0]) are preserved automatically in-place!
