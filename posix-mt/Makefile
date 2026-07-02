@@ -73,7 +73,7 @@ src/%.cmpctcr.o: ../src/%.c
 
 %.cmpctcr.o: %.c
 	$(CC) $(CFLAGS) $(OZ) -DPT_CORE -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
-
+ifeq ($(UNAME_S),Darwin)
 # ----------------------------------------------------------------------------
 # Profile 2: Compact / Multi-Thread Engine (-Oz, Hidden Internals)
 # ----------------------------------------------------------------------------
@@ -93,7 +93,7 @@ src/%.cmpctmt.o: ../src/%.c
 
 %.cmpctmt.o: %.c
 	$(CC) $(CFLAGS) $(OZ) -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
-
+endif
 # ----------------------------------------------------------------------------
 # Profile 3: Optimized / Core Engine (-O3, Hidden Internals)
 # ----------------------------------------------------------------------------
@@ -113,7 +113,7 @@ src/%.benchcr.o: ../src/%.c
 
 %.benchcr.o: %.c
 	$(CC) $(CFLAGS) -O3 -DPT_CORE -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
-
+ifeq ($(UNAME_S),Darwin)
 # ----------------------------------------------------------------------------
 # Profile 4: Optimized / Multi-Thread Engine (-O3, Hidden Internals)
 # ----------------------------------------------------------------------------
@@ -133,7 +133,7 @@ src/%.benchmt.o: ../src/%.c
 
 %.benchmt.o: %.c
 	$(CC) $(CFLAGS) -O3 -flto -fno-strict-aliasing -fvisibility=hidden $(INCLUDES) -c $< -o $@
-
+endif
 # ----------------------------------------------------------------------------
 # Profile 5: High-Visibility Debug Engine (-g, -O0, Full GDB Access, No Interpose)
 # ----------------------------------------------------------------------------

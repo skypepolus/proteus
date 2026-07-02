@@ -38,12 +38,12 @@ void *sbrk(intptr_t increment)
 
 // Minimal bare-metal string utilities for core.c
 void* memset(void* dest, int val, size_t len) {
-	__builtin_wasm_memory_fill(dest, val, len);
+	__builtin_memset(dest, val, len);
     return dest;
 }
 
 void* memcpy(void* dest, const void* src, size_t len) {
-	__builtin_wasm_memory_copy(dest, src, len);
+	__builtin_memcpy(dest, src, len);
     return dest;
 }
 
