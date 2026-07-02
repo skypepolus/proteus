@@ -25,7 +25,8 @@
 void pt_arena_init_routine(void);
 
 #ifdef __APPLE__
-    #if defined(__aarch64__)
+	#ifdef PT_CORE
+		#if defined(__aarch64__)
         // ---------------------------------------------------------
         // Apple Silicon (M-Series) Fast-Path
         // Reads the Thread ID Register. Executes in ~1 cycle.
@@ -36,7 +37,7 @@ void pt_arena_init_routine(void);
             return (int)(tpidrro & 0xFF) % max_arenas;
         }
 
-    #elif defined(__x86_64__)
+		#elif defined(__x86_64__)
         // ---------------------------------------------------------
         // Intel Mac (x86_64) Path
         // Uses CPUID to fetch the Local APIC ID.
@@ -55,6 +56,7 @@ void pt_arena_init_routine(void);
 			// EDX contains the 32-bit x2APIC ID of the current logical core
             return edx % max_arenas;
         }
+		#endif
     #else
         // Fallback for unknown Apple architectures
         #include <pthread.h>
