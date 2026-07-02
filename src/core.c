@@ -122,7 +122,7 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
     // Because Proteus natively aligns all blocks to 16-byte boundaries (2 words),
     // standard small alignments are already guaranteed to be met.
 
-	alignment = alignment < sizeof(word_t) * 2 ? 0 : alignment;
+	alignment = alignment < sizeof(word_t) * 2 ? sizeof(word_t) * 2 : alignment;
 
 	/* ============================================================================
      * LANE 2: ARENA-BASED ALIGNMENT CARVING (ALIGNMENT > 16 BYTES)
@@ -168,7 +168,7 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 		}
 
 		// 2. Find the aligned payload boundary inside the raw payload
-		aligned_payload = 0 == alignment ? (uintptr_t)(left_hdr + 1) : ( (uintptr_t)(left_hdr + 1) + alignment - 1) & ~(alignment - 1);
+		aligned_payload = ((uintptr_t)(left_hdr + 1) + alignment - 1) & ~(alignment - 1);
 
         // 3. Calculate structural boundaries
 		switch((unsigned)left_hdr[0] >> 1) {

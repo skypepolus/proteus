@@ -79,16 +79,12 @@ typedef struct pt_redblack {
 } __attribute__((aligned(8))) pt_redblack_t;
 
 static inline uintptr_t next_power_of_2(uintptr_t n) {
-	switch(n) {
-	case 0:
-	case 1:
+	if(__builtin_expect(n <= 1, 0)) {
 		return n;
-	default:
-		if (sizeof(uintptr_t) == 8) {
-			return (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clzll(n - 1));// Uses 64-bit built-in 
-		} else {
-			return (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clz(n - 1));	// Uses 32-bit built-in 
-		}
+	} else if (sizeof(uintptr_t) == 8) {
+		return (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clzll(n - 1));// Uses 64-bit built-in 
+	} else {
+		return (uintptr_t)1 << (sizeof(uintptr_t) * 8 - __builtin_clz(n - 1));	// Uses 32-bit built-in 
 	}
 	return 0;
 }
