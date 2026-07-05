@@ -113,7 +113,7 @@ void proteus_free(void* ptr)
 	hybrid_unlock(arena->lock);
 }
 
-void* proteus_memalign(size_t alignment, size_t size_bytes) 
+void* proteus_memalign(size_t _alignment, size_t size_bytes) 
 {
 	uintptr_t aligned_payload;
     /* ============================================================================
@@ -122,13 +122,13 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
     // Because Proteus natively aligns all blocks to 16-byte boundaries (2 words),
     // standard small alignments are already guaranteed to be met.
 
-	alignment = alignment < sizeof(word_t) * 2 ? sizeof(word_t) * 2 : alignment;
+	size_t alignment = _alignment < sizeof(word_t) * 2 ? sizeof(word_t) * 2 : _alignment;
 
 	/* ============================================================================
      * LANE 2: ARENA-BASED ALIGNMENT CARVING (ALIGNMENT > 16 BYTES)
      * ============================================================================ */
 	// Request enough padding to guarantee we can shift up to the alignment boundary
-    size_t request_bytes = size_bytes + alignment;
+    size_t request_bytes = size_bytes + (_alignment < sizeof(word_t) * 2 ? 0 : alignment);
     word_t request_words = PT_TOTAL_BLOCK_WORDS(request_bytes);
 
     pt_arena_t* arena = pt_arena_get_local();
