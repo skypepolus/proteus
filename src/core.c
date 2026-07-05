@@ -128,7 +128,7 @@ void* proteus_memalign(size_t _alignment, size_t size_bytes)
      * LANE 2: ARENA-BASED ALIGNMENT CARVING (ALIGNMENT > 16 BYTES)
      * ============================================================================ */
 	// Request enough padding to guarantee we can shift up to the alignment boundary
-    size_t request_bytes = size_bytes + (_alignment < sizeof(word_t) * 2 ? 0 : alignment);
+    size_t request_bytes = size_bytes + (_alignment < sizeof(word_t) * 2 ? 0 : alignment - 1);
     word_t request_words = PT_TOTAL_BLOCK_WORDS(request_bytes);
 
     pt_arena_t* arena = pt_arena_get_local();
