@@ -113,23 +113,29 @@ void proteus_free(void* ptr)
 	hybrid_unlock(arena->lock);
 }
 
-void* proteus_memalign(size_t _alignment, size_t size_bytes) 
+void* proteus_memalign(size_t alignment, size_t size_bytes) 
 {
 	uintptr_t aligned_payload;
+    word_t request_words, size_words;
+
+	if(__builtin_expect(alignment <= sizeof(word_t) * 2, 1)) {
     /* ============================================================================
      * LANE 1: STANDARD MALLOC ROUTING (ALIGNMENT <= 16 BYTES)
      * ============================================================================ */
     // Because Proteus natively aligns all blocks to 16-byte boundaries (2 words),
     // standard small alignments are already guaranteed to be met.
-
-	size_t alignment = _alignment < sizeof(word_t) * 2 ? sizeof(word_t) * 2 : _alignment;
-
+		alignment = sizeof(word_t) * 2;
+		request_words = PT_TOTAL_BLOCK_WORDS(size_bytes);
+		size_words = request_words;
+	} else {
 	/* ============================================================================
      * LANE 2: ARENA-BASED ALIGNMENT CARVING (ALIGNMENT > 16 BYTES)
      * ============================================================================ */
 	// Request enough padding to guarantee we can shift up to the alignment boundary
-    size_t request_bytes = size_bytes + (_alignment < sizeof(word_t) * 2 ? 0 : alignment - 1);
-    word_t request_words = PT_TOTAL_BLOCK_WORDS(request_bytes);
+		size_t request_bytes = size_bytes + alignment - 1;
+		request_words = PT_TOTAL_BLOCK_WORDS(request_bytes);
+		size_words = PT_TOTAL_BLOCK_WORDS(size_bytes);
+	}
 
     pt_arena_t* arena = pt_arena_get_local();
 	#ifndef PT_SINGLE_THREAD
@@ -183,14 +189,14 @@ void* proteus_memalign(size_t _alignment, size_t size_bytes)
 			pt_idx_list_split_state_machine(arena, 
 				left_hdr, 
 				(word_t*)aligned_payload - 1, 
-				(word_t*)aligned_payload - 1 + PT_TOTAL_BLOCK_WORDS(size_bytes),
+				(word_t*)aligned_payload - 1 + size_words,
 				left_hdr + left_hdr[0]);
 			break;
 		default:
 			pt_idx_tree_split_state_machine(arena,
 				left_hdr, 
 				(word_t*)aligned_payload - 1, 
-				(word_t*)aligned_payload - 1 + PT_TOTAL_BLOCK_WORDS(size_bytes),
+				(word_t*)aligned_payload - 1 + size_words,
 				left_hdr + left_hdr[0]);
 			break;
 		}
