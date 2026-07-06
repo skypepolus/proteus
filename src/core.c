@@ -122,13 +122,13 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
     // Because Proteus natively aligns all blocks to 16-byte boundaries (2 words),
     // standard small alignments are already guaranteed to be met.
 
-	alignment = alignment < sizeof(word_t) * 2 ? sizeof(word_t) * 2 : alignment;
+	alignment = alignment <= sizeof(word_t) * 2 ? sizeof(word_t) * 2 : alignment;
 
 	/* ============================================================================
      * LANE 2: ARENA-BASED ALIGNMENT CARVING (ALIGNMENT > 16 BYTES)
      * ============================================================================ */
 	// Request enough padding to guarantee we can shift up to the alignment boundary
-    size_t request_bytes = size_bytes + alignment;
+    size_t request_bytes = size_bytes + (alignment <= sizeof(word_t) * 2 ? 0 : alignment - 1);
     word_t request_words = PT_TOTAL_BLOCK_WORDS(request_bytes);
 
     pt_arena_t* arena = pt_arena_get_local();

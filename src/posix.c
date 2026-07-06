@@ -28,9 +28,6 @@ extern int errno;
 
 typedef uintptr_t size_t;
 
-void* memset(void* dest, int val, size_t len);
-void* memcpy(void* dest, const void* src, size_t len);
-
 #endif
 
 /* ============================================================================
@@ -54,7 +51,7 @@ PT_EXPORT void* calloc(size_t nmemb, size_t size) {
     void* ptr = proteus_memalign(0, total);
     if (ptr) {
         // Zero-fill allocated tracking space
-        return memset(ptr, 0, total);
+        __builtin_memset(ptr, 0, total);
     }
     return ptr;
 }
