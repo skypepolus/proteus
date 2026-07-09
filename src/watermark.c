@@ -47,7 +47,7 @@ void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words)
 	
 	if (page_start < page_end) {
 		word_t* right_hdr   = final_hdr + final_hdr[0];
-
+		#if 1
 		// 1. UNLINK: Remove from the tree so it can't be allocated
 		pt_idx_tree_unlink(arena, node);
 
@@ -57,10 +57,12 @@ void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words)
 
 		// 3. DROP LOCK: Allow parallel allocations
 		hybrid_unlock(arena->lock);
-
+		#else
+		atomic_fetch_add_explicit(&arena->lock->wait, 1, memory_order_relaxed);
+		#endif
 		// 4. SYSCALL: Safe, unlocked page table purge
 		pt_platform_purge_pages((void*)page_start, page_end - page_start);
-
+		#if 1
 		// 5. RE-ACQUIRE LOCK
 		hybrid_lock(arena->lock, FREE_SPIN_COUNTER);
 
@@ -69,7 +71,9 @@ void pt_arena_watermark(pt_arena_t* arena, word_t* final_hdr, word_t size_words)
 		// precondition. It will safely check if neighbors freed themselves while 
 		// we were unlocked, format the final positive tags, and insert it.
 		final_hdr = pt_idx_coalesce_state_machine(arena, final_hdr, right_hdr);
-
+		#else
+		atomic_fetch_sub_explicit(&arena->lock->wait, 1, memory_order_relaxed);
+		#endif
 		// 7. Re-anchor the geometric vector tracking
 		node = pt_idx_hdr_to_tree(final_hdr, final_hdr[0]);
 		word_t advised_size = right_hdr - (word_t*)page_start;

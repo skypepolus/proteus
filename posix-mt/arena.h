@@ -81,11 +81,11 @@ static inline pt_arena_t* pt_arena_get_local(void)
     // 2. Wrap it in a Clang branch hint assuming it is almost always true (> 0).
     int cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire);
     
-    if (__builtin_expect(cores == 0, 0)) {
+    if (__builtin_expect(cores <= 0, 0)) {
         // Slow path: Only hit once in the entire application lifetime
 		pthread_once(&pt_once_control, pt_arena_init_routine);
 		while(0 == (cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire))) {
-			platform_spin_pause();
+			sched_yield();
 		}
     }
 

@@ -43,6 +43,7 @@ extern pthread_once_t pt_once_control;
 typedef struct g_pt {
 	// Standard atomic int for core counting
 	_Atomic int num_cores;
+	uint8_t reserved_align[64 - sizeof(int)];
 	pt_arena_t* arenas;
 	// Runtime OS Page Invariants
     size_t page_size;   // e.g., 4096, 16384, or 65536

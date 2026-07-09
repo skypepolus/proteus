@@ -338,7 +338,7 @@ void pt_idx_tree_split_state_machine(pt_arena_t* arena, word_t* left_hdr, word_t
 
 		case 3 * 4 + 3: // Left Tree, Right Tree
 			x = pt_idx_hdr_to_tree(left_hdr, current_size);
-			word_t* watermark = right_hdr - x->hdr[0];
+			word_t* watermark = bdry_hdr - x->hdr[0];
             pt_idx_tree_absorb_stationary_right(x, right_tag);
 			right_hdr[0] = right_tag;
             pt_idx_tree_insert(arena, x, left_hdr, left_tag);
@@ -557,7 +557,7 @@ void pt_idx_tree_unlink(pt_arena_t* arena, pt_redblack_t* z)
                 } else { x = fixup_parent; fixup_parent = x->parent; }
             }
         }
-        if (x) x->color = PT_RB_BLACK;
+        if (x && PT_RB_RED == x->color) x->color = PT_RB_BLACK;
     }
     
     if (arena->root && PT_RB_RED == arena->root->color) arena->root->color = PT_RB_BLACK;

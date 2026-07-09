@@ -1,0 +1,5 @@
+iso: 1.2.5, 2670d5f, https://github.com/struct/isoalloc
+je: 5.3.1, 81034ce1, https://github.com/jemalloc/jemalloc
+lp: main, 07059153, https://github.com/WebKit/WebKit
+mi: v1.8.2, b66e3214, https://github.com/microsoft/mimalloc
+tc: gperftools-2.18, 6ed7350, https://github.com/gperftools/gperftools
