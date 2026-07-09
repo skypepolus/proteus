@@ -29,8 +29,6 @@
 
 __attribute__((aligned(64))) g_pt_t g_pt; 
 
-__attribute__((aligned(64))) pthread_once_t pt_once_control = PTHREAD_ONCE_INIT;
-
 void pt_arena_prepare_fork(void) {
     // Acquire EVERY arena lock sequentially before the fork occurs
     for (long i = 0; i < g_pt.num_cores; i++) {

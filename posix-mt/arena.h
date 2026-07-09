@@ -82,11 +82,17 @@ static inline pt_arena_t* pt_arena_get_local(void)
     int cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire);
     
     if (__builtin_expect(cores <= 0, 0)) {
+		int expected;
+		int desired;
         // Slow path: Only hit once in the entire application lifetime
-		pthread_once(&pt_once_control, pt_arena_init_routine);
-		while(0 == (cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire))) {
+		if(0 == (expected = atomic_load_explicit(&g_pt.num_cores, memory_order_relaxed))
+		&& atomic_compare_exchange_strong_explicit(&g_pt.num_cores, &expected, desired = -1, memory_order_acquire, memory_order_relaxed)) {
+			pt_arena_init_routine();
+		}
+		while(0 >= atomic_load_explicit(&g_pt.num_cores, memory_order_relaxed)) {
 			sched_yield();
 		}
+		cores = atomic_load_explicit(&g_pt.num_cores, memory_order_acquire);
     }
 
     return &g_pt.arenas[get_proteus_arena_id(cores)];
