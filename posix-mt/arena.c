@@ -124,7 +124,7 @@ void pt_arena_init_routine(void)
 #endif
 
     /* 2. Calculate allocation requirements */
-    size_t alloc_bytes = (size_t)detected_cores * sizeof(pt_arena_t);
+    size_t alloc_bytes = (size_t)detected_cores * sizeof(pt_arena_t) + sizeof(pt_cross_core_t) * detected_cores * detected_cores;
     
     /* 3. Calculate allocation requirements */
     void* raw_mapping = mmap(NULL, alloc_bytes, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
@@ -133,6 +133,7 @@ void pt_arena_init_routine(void)
 	}
     
 	g_pt.arenas = raw_mapping;	
+	pt_cross_core_t* cross = (pt_cross_core_t*)&g_pt.arenas[detected_cores];
 
 	/* 4. Individual Core Arena Bootstrapping Loop */
 	for (long i = 0; i < detected_cores; i++) {
@@ -141,6 +142,8 @@ void pt_arena_init_routine(void)
 		// Construct your asymmetric hybrid-lock primitive
 		arena->lock = arena->parent_lock;
 		hybrid_initial(arena->lock);
+		arena->cross = cross;
+		cross += detected_cores;
 	
 		// Initialize your logical list sentinels to point back to themselves
 		arena->segregate[0].head.next = &arena->segregate[0].tail;
@@ -151,8 +154,8 @@ void pt_arena_init_routine(void)
 	
 		// Tree begins completely clear
 		arena->root = NULL;
-
 		arena->empty_superpage_cache = NULL; 
+		arena->core = i;
 	}
 
 	size_t page_mask = g_pt.page_mask;

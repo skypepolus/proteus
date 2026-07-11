@@ -26,7 +26,8 @@
 void *memcpy(void *dest, const void *src, size_t n);
 #endif
 
-static inline word_t* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_words) {
+static inline word_t* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t size_words) 
+{
 
 	pt_link_t* head, *tail;
 	switch((unsigned)size_words >> 1) {
@@ -64,6 +65,67 @@ static inline word_t* pt_core_try_segregated_alloc(pt_arena_t* arena, word_t siz
     return NULL; // List caches are fully depleted for these tiers
 }
 
+#ifdef PT_SINGLE_THREAD
+inline
+#endif
+static void pt_core_free(pt_arena_t* arena, pt_superpage_t* superpage, word_t* hdr_ptr, word_t size_words, void* ptr) 
+{
+	#ifdef PT_SINGLE_THREAD
+	(void)ptr;
+	#else
+	for(;;) {
+		void* next = *(void**)ptr;
+	#endif
+		word_t* final_hdr = pt_idx_coalesce_state_machine(arena, hdr_ptr, hdr_ptr + size_words);
+		#ifdef PT_POSIX
+		if (!pt_arena_watermark_no(final_hdr[0])) {
+			void* superpage_base = pt_arena_watermark_release(arena, superpage, final_hdr, size_words);
+			#ifdef PT_SINGLE_THREAD
+			(void)superpage_base;
+			#else
+			if(superpage_base) {
+				hybrid_unlock(arena->lock);
+				munmap(superpage_base, PT_SUPER_PAGE_BYTES);
+				hybrid_lock(arena->lock, FREE_SPIN_COUNTER);
+			}
+			#endif/*PT_SINGLE_THREAD*/
+		}
+		#else
+		(void)final_hdr;
+		#endif
+	#ifndef PT_SINGLE_THREAD
+		if((next)) {
+			ptr = next;
+
+			hdr_ptr = (word_t*)ptr - 1;
+
+			if (__builtin_expect(0 <= *hdr_ptr, 0)) __builtin_trap(); // Hardware corruption trap
+
+			size_words = -*hdr_ptr;
+
+			superpage = pt_arena_superpage(ptr);
+		} else {
+			break;
+		}
+	}
+	#endif
+}
+
+#ifndef PT_SINGLE_THREAD
+static void pt_cross_core_free(void* ptr)
+{    
+	word_t* hdr_ptr = (word_t*)ptr - 1;
+    if (__builtin_expect(0 <= *hdr_ptr, 0)) __builtin_trap(); // Hardware corruption trap
+
+    word_t size_words = -*hdr_ptr;
+
+    pt_superpage_t* superpage = pt_arena_superpage(ptr);
+    pt_arena_t* arena         = superpage->arena_ptr;
+
+	pt_core_free(arena, superpage, hdr_ptr, size_words, ptr);
+}
+#endif
+
 void proteus_free(void* ptr) 
 {
     if (__builtin_expect(ptr == NULL, 0)) return;
@@ -88,29 +150,49 @@ void proteus_free(void* ptr)
 	#endif/*PT_SINGLE_THREAD*/
     pt_superpage_t* superpage = pt_arena_superpage(ptr);
     pt_arena_t* arena         = superpage->arena_ptr;
-    hybrid_lock(arena->lock, FREE_SPIN_COUNTER);
-
-    word_t* final_hdr = pt_idx_coalesce_state_machine(arena, hdr_ptr, hdr_ptr + size_words);
-	#ifdef PT_POSIX
-	if (pt_arena_watermark_no(final_hdr[0])) { 
-		hybrid_unlock(arena->lock);
-		return;
-	} else { 
-		void* superpage_base = pt_arena_watermark_release(arena, superpage, final_hdr, size_words);
-		#ifdef PT_SINGLE_THREAD
-		(void)superpage_base;
-		#else
-		if(superpage_base) {
-			hybrid_unlock(arena->lock);
-			munmap(superpage_base, PT_SUPER_PAGE_BYTES);
-			return;
-		}
-		#endif/*PT_SINGLE_THREAD*/
-	}
+	#ifdef PT_SINGLE_THREAD
+	pt_core_free(arena, superpage, hdr_ptr, size_words, ptr);
 	#else
-	(void)final_hdr;
-	#endif
-	hybrid_unlock(arena->lock);
+    pt_arena_t* local = pt_arena_get_local();
+	int core;
+	void* expected;
+	void* desired;
+	if(arena == local) {
+		hybrid_lock(arena->lock, FREE_SPIN_COUNTER);
+
+		core = local - g_pt.arenas;
+		for(expected = atomic_load_explicit(&arena->cross[core].list, memory_order_acquire), *(void**)ptr = expected; 
+			(expected) 
+			&& !atomic_compare_exchange_strong_explicit(&arena->cross[core].list, &expected, desired = NULL, memory_order_release, memory_order_relaxed);
+			expected = atomic_load_explicit(&arena->cross[core].list, memory_order_acquire), *(void**)ptr = expected) { platform_spin_pause(); }
+		pt_core_free(arena, superpage, hdr_ptr, size_words, ptr);
+
+		core = (arena->core + 1) % g_pt.num_cores;
+		if(atomic_load_explicit(&arena->cross[core].list, memory_order_relaxed)) {
+			for(expected = atomic_load_explicit(&arena->cross[core].list, memory_order_acquire), ptr = expected; 
+				(expected)
+				&& !atomic_compare_exchange_strong_explicit(&arena->cross[core].list, &expected, desired = NULL, memory_order_release, memory_order_relaxed)
+				&& (ptr = atomic_load_explicit(&arena->cross[core].list, memory_order_relaxed));
+				expected = atomic_load_explicit(&arena->cross[core].list, memory_order_acquire), ptr = expected) { 	platform_spin_pause(); }
+			if((ptr)) {
+				pt_cross_core_free(ptr);
+			}
+		}
+		arena->core = core;
+
+		hybrid_unlock(arena->lock);
+	} else {
+		core = arena - g_pt.arenas;
+		expected = atomic_load_explicit(&arena->cross[core].list, memory_order_acquire);
+		*(void**)ptr = expected; 
+		if(!atomic_compare_exchange_strong_explicit(&arena->cross[core].list, &expected, desired = ptr, memory_order_release, memory_order_relaxed)) {
+			core = local -  g_pt.arenas;
+			for(expected = atomic_load_explicit(&arena->cross[core].list, memory_order_acquire), *(void**)ptr = expected; 
+				!atomic_compare_exchange_strong_explicit(&arena->cross[core].list, &expected, desired = ptr, memory_order_release, memory_order_relaxed);
+				expected = atomic_load_explicit(&arena->cross[core].list, memory_order_acquire), *(void**)ptr = expected) { platform_spin_pause(); }
+		}
+	}
+	#endif/*PT_SINGLE_THREAD*/
 }
 
 void* proteus_memalign(size_t alignment, size_t size_bytes) 
@@ -134,6 +216,9 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
     pt_arena_t* arena = pt_arena_get_local();
 	#ifndef PT_SINGLE_THREAD
     if (__builtin_expect(request_words <= PT_HUGE_THRESHOLD_WORDS, 1)) {
+		int core;
+		void* expected;
+		void* desired;
 	#endif/*PT_SINGLE_THREAD*/
 		// === ENCAPSULATE CRITICAL MUTATION SECTION ===
 		// ----------------------------------------------------------------------------
@@ -156,7 +241,30 @@ void* proteus_memalign(size_t alignment, size_t size_bytes)
 				hybrid_lock(arena->lock, MALLOC_SPIN_COUNTER); // Reacquire lock
 			}
 		}
+		#ifndef PT_SINGLE_THREAD
+		core = arena - g_pt.arenas;
+		if(atomic_load_explicit(&arena->cross[core].list, memory_order_relaxed)) {
+			void* ptr;
+			expected = atomic_load_explicit(&arena->cross[core].list, memory_order_acquire); 
+			if((ptr = expected) 
+			&& atomic_compare_exchange_strong_explicit(&arena->cross[core].list, &expected, desired = NULL, memory_order_release, memory_order_relaxed)) {
+				pt_cross_core_free(ptr);
+			}
+		}
 
+		core = (arena->core + 1) % g_pt.num_cores;
+		if(atomic_load_explicit(&arena->cross[core].list, memory_order_relaxed)) {
+			void* ptr;
+			for(expected = atomic_load_explicit(&arena->cross[core].list, memory_order_acquire), ptr = expected; 
+				!atomic_compare_exchange_strong_explicit(&arena->cross[core].list, &expected, desired = NULL, memory_order_release, memory_order_relaxed)
+				&& (ptr = atomic_load_explicit(&arena->cross[core].list, memory_order_relaxed));
+				expected = atomic_load_explicit(&arena->cross[core].list, memory_order_acquire), ptr = expected) { platform_spin_pause(); }
+			if((ptr)) {
+				pt_cross_core_free(ptr);
+			}
+		}
+		arena->core = core;
+		#endif
         // 1. Allocate a raw block large enough from the arena
 		word_t* left_hdr;
 
