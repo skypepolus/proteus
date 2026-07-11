@@ -19,7 +19,7 @@
 #include "hybrid_lock.h"
 
 typedef struct pt_cross_core {
-	void* list;
+	void* _Atomic list;
 	uint8_t reserved0align[64 - sizeof(void*)];
 } pt_cross_core_t;
 
