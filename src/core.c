@@ -21,7 +21,6 @@
 #include <sys/mman.h>
 #include <string.h> // For high-performance architecture-optimized memcpy/memset
 #include <errno.h>
-#include <immintrin.h>
 #else
 void *memcpy(void *dest, const void *src, size_t n);
 #endif

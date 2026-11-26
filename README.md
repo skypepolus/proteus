@@ -57,6 +57,8 @@ proteus/
 ### Prerequisites
 * A standard C toolchain (`clang` or `gcc`) supporting the C11 standard.
 * POSIX Threads (`-pthread`) library support.
+* Apple silicon builds use the native `arm64` compiler path; x86-only
+  intrinsic headers are not required by the portable allocator core.
 
 ### 1. Initialize Submodule Dependency
 Before compiling, fetch and sync the header-only atomic `hybrid-lock` submodule dependency:
